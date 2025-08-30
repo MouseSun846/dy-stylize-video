@@ -142,11 +142,12 @@
 
         <!-- 新任务模式 -->
         <div id="newTaskMode">
-          <label>OpenRouter API Key</label>
-          <input id="apiKey" type="password" placeholder="sk-or-v1-..." />
+          <form id="newTaskForm" onsubmit="return false;">
+            <label>OpenRouter API Key</label>
+            <input id="apiKey" type="password" placeholder="sk-or-v1-..." />
 
-          <label style="margin-top:10px">上传原图</label>
-          <input id="inputImage" type="file" accept="image/*" />
+            <label style="margin-top:10px">上传原图</label>
+            <input id="inputImage" type="file" accept="image/*" />
           <div class="preview-container" style="margin-top:8px">
             <img id="origPreview" class="preview-img" style="display:none" alt="原图预览" />
           </div>
@@ -215,12 +216,14 @@
               </div>
             </div>
           </details>
+          </form>
         </div>
 
         <!-- 仅生成图片模式 -->
         <div id="imageOnlyMode" style="display:none">
-          <label>OpenRouter API Key</label>
-          <input id="imageApiKey" type="password" placeholder="sk-or-v1-..." />
+          <form id="imageOnlyForm" onsubmit="return false;">
+            <label>OpenRouter API Key</label>
+            <input id="imageApiKey" type="password" placeholder="sk-or-v1-..." />
 
           <label style="margin-top:10px">上传原图</label>
           <input id="imageInputImage" type="file" accept="image/*" />
@@ -2556,23 +2559,22 @@
       
       currentGalleryGroup = data.group;
       
-
-    
-    document.addEventListener('keydown', handleEscape);
-    
-    // 点击外部区域关闭
-    const handleOutsideClick = (event) => {
-      if (event.target === modal) {
-        document.removeEventListener('click', handleOutsideClick);
-        hideCustomModalWithInput(modal);
-      }
-    };
-    
-    setTimeout(() => {
-      document.addEventListener('click', handleOutsideClick);
-    }, 100);
-  
-  
+      // 显示相关区域
+      el('galleryUploadArea').style.display = 'block';
+      el('galleryImagesArea').style.display = 'block';
+      el('galleryVideoConfig').style.display = 'block';
+      el('galleryGroupActions').style.display = 'flex';
+      
+      // 更新分组标题
+      el('galleryGroupTitle').textContent = `分组: ${currentGalleryGroup.name}`;
+      
+      // 加载分组中的图片
+      await loadGalleryImages(groupId);
+      
+    } catch (error) {
+      toast(`加载图库分组失败: ${error.message}`, 'err');
+    }
+  }
 
   // 隐藏带输入框的自定义模态对话框
   function hideCustomModalWithInput(modal) {
@@ -2611,21 +2613,6 @@
     checkboxes.forEach(checkbox => {
       checkbox.checked = slideEffects.includes(checkbox.value);
     });
-  }
-      el('galleryUploadArea').style.display = 'block';
-      el('galleryImagesArea').style.display = 'block';
-      el('galleryVideoConfig').style.display = 'block';
-      el('galleryGroupActions').style.display = 'flex';
-      
-      // 更新分组标题
-      el('galleryGroupTitle').textContent = `分组: ${currentGalleryGroup.name}`;
-      
-      // 加载分组中的图片
-      await loadGalleryImages(groupId);
-      
-    } catch (error) {
-      toast(`加载图库分组失败: ${error.message}`, 'err');
-    }
   }
 
   // 加载图库图片
