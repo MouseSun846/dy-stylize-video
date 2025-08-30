@@ -49,7 +49,7 @@
     .preview-img{width:100%;height:200px;object-fit:contain;background:#000;border-radius:8px;border:1px solid rgba(255,255,255,.1)}
     .task-status{background:rgba(255,255,255,.02);border-radius:8px;padding:12px;margin-top:12px;border:1px solid rgba(255,255,255,.08)}
     .video-container{margin-top:12px}
-    .video-player{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1)}
+    .video-player{width:100%;height:600px;border-radius:12px;border:1px solid rgba(255,255,255,.1)}
     .transition-checkbox{display:flex;align-items:center;gap:4px;font-size:10px;padding:2px 4px;border-radius:4px;cursor:pointer;transition:background-color 0.2s}
     .transition-checkbox:hover{background:rgba(255,255,255,.05)}
     .transition-checkbox input{width:auto;margin:0;transform:scale(0.8)}
@@ -305,6 +305,10 @@
                 <input id="historyPerSlideSeconds" type="number" value="3.0" min="0.5" max="5" step="0.1" />
               </div>
               <div>
+                <label>图片循环倍数</label>
+                <input id="historyImageMultiplier" type="number" value="1" min="1" max="10" title="设置图片循环倍数，如3张图片设置3倍则循环为: 1-2-3-1-2-3-1-2-3" />
+              </div>
+              <div>
                 <label>过渡时间 (秒)</label>
                 <input id="historyTransitionSeconds" type="number" value="0.6" min="0" max="1" step="0.1" />
               </div>
@@ -449,6 +453,7 @@
   const historyVideoFpsInput = el('historyVideoFps');
   const historyPerSlideSecondsInput = el('historyPerSlideSeconds');
   const historyTransitionSecondsInput = el('historyTransitionSeconds');
+  const historyImageMultiplierInput = el('historyImageMultiplier');
   const historyVideoWidthSelect = el('historyVideoWidth');
   const historyVideoHeightSelect = el('historyVideoHeight');
   const historyBgmFile = el('historyBgmFile');
@@ -872,6 +877,7 @@
     historyVideoFpsInput.value = task.config.fps || 30;
     historyPerSlideSecondsInput.value = task.config.per_slide_seconds || 3.0;
     historyTransitionSecondsInput.value = task.config.transition_seconds || 0.6;
+    historyImageMultiplierInput.value = task.config.image_multiplier || 1;
     historyVideoWidthSelect.value = task.config.width || 720;
     historyVideoHeightSelect.value = task.config.height || 1280;
     
@@ -994,7 +1000,7 @@
     });
 
     // 历史任务配置变化
-    [historyVideoFpsInput, historyPerSlideSecondsInput, historyTransitionSecondsInput].forEach(input => {
+    [historyVideoFpsInput, historyPerSlideSecondsInput, historyTransitionSecondsInput, historyImageMultiplierInput].forEach(input => {
       input.onchange = updateButtonText;
       input.oninput = updateButtonText;
     });
@@ -1276,7 +1282,8 @@
       transition_seconds: parseFloat(historyTransitionSecondsInput.value) || 0.6,
       transition_effects: selectedTransitions,
       width: parseInt(historyVideoWidthSelect.value) || 720,
-      height: parseInt(historyVideoHeightSelect.value) || 1280
+      height: parseInt(historyVideoHeightSelect.value) || 1280,
+      image_multiplier: parseInt(historyImageMultiplierInput.value) || 1
     };
   }
 
@@ -1306,7 +1313,21 @@
         startBtn.textContent = `开始生成 ${slideCount} 张风格图片`;
       }
     } else if (currentMode === 'history') {
-      startBtn.textContent = '从历史任务重新生成视频';
+      if (selectedHistoryTask) {
+        const config = getHistoryConfig();
+        const originalImageCount = selectedHistoryTask.images ? selectedHistoryTask.images.length : 0;
+        const totalImages = originalImageCount * config.image_multiplier;
+        const totalSeconds = totalImages * config.per_slide_seconds;
+        const resolution = `${config.width}x${config.height}`;
+        
+        if (config.image_multiplier > 1) {
+          startBtn.textContent = `重新生成视频（${originalImageCount}张×${config.image_multiplier}倍=${totalImages}张）${totalSeconds.toFixed(1)}秒 (${resolution})`;
+        } else {
+          startBtn.textContent = `从历史任务重新生成视频（${originalImageCount}张）${totalSeconds.toFixed(1)}秒 (${resolution})`;
+        }
+      } else {
+        startBtn.textContent = '从历史任务重新生成视频';
+      }
     }
   }
 

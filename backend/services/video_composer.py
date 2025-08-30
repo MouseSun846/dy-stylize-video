@@ -99,7 +99,8 @@ class VideoComposer:
                 video_no_audio = await self._create_video_from_images(
                     image_sequence,
                     config,
-                    temp_path
+                    temp_path,
+                    progress_callback=lambda p: progress_callback(40 + p * 0.3) if progress_callback else None
                 )
                 
                 if progress_callback:
@@ -110,7 +111,8 @@ class VideoComposer:
                     video_no_audio,
                     audio_path,
                     config,
-                    temp_path
+                    temp_path,
+                    progress_callback
                 )
                 
                 if progress_callback:
@@ -158,46 +160,36 @@ class VideoComposer:
         self.logger.info(f"生成的图片ID列表: {generated_image_ids}")
         self.logger.info(f"临时目录: {temp_path}")
         
-        # 添加原始图片（如果配置要求）
+        # 获取循环倍数，默认1倍
+        image_multiplier = config.get('image_multiplier', 1)
+        self.logger.info(f"图片循环倍数: {image_multiplier}")
+        
+        # 首先处理原始图片（如果配置要求）
+        base_images = []
         if config['include_original']:
             self.logger.info("添加原始图片到序列")
             if os.path.exists(original_image_path):
-                original_resized = await self._resize_and_save_image(
-                    original_image_path,
-                    target_size,
-                    temp_path / "frame_000.jpg"
-                )
-                image_sequence.append(original_resized)
-                self.logger.info(f"原始图片处理完成: {original_resized}")
+                base_images.append(('original', original_image_path))
+                self.logger.info(f"原始图片添加到基础序列: {original_image_path}")
             else:
                 self.logger.error(f"原始图片不存在: {original_image_path}")
         
-        # 添加生成的图片
+        # 添加生成的图片到基础序列
         for i, image_id in enumerate(generated_image_ids):
             if image_id:  # 跳过None值
                 image_path = file_manager.get_file_path(image_id)
                 self.logger.info(f"处理生成图片 {i+1}/{len(generated_image_ids)}: ID={image_id}, Path={image_path}")
                 
                 if image_path and os.path.exists(image_path):
-                    frame_number = len(image_sequence)
-                    output_path = temp_path / f"frame_{frame_number:03d}.jpg"
-                    
-                    try:
-                        resized_path = await self._resize_and_save_image(
-                            image_path,
-                            target_size,
-                            output_path
-                        )
-                        image_sequence.append(resized_path)
-                        self.logger.info(f"图片处理成功: {image_path} -> {resized_path}")
-                    except Exception as e:
-                        self.logger.error(f"图片处理失败 {image_path}: {str(e)}")
+                    base_images.append(('generated', image_path))
+                    self.logger.info(f"生成图片添加到基础序列: {image_path}")
                 else:
                     self.logger.warning(f"图片文件不存在: {image_path} (ID: {image_id})")
             else:
                 self.logger.warning(f"跳过空的图片ID: {i+1}/{len(generated_image_ids)}")
         
-        if not image_sequence:
+        # 检查是否有基础图片
+        if not base_images:
             self.logger.error("没有可用的图片进行视频合成")
             # 输出调试信息
             self.logger.error(f"原始图片存在: {os.path.exists(original_image_path) if original_image_path else False}")
@@ -206,19 +198,35 @@ class VideoComposer:
             # 如果原始图片存在，尝试强制添加它
             if original_image_path and os.path.exists(original_image_path):
                 self.logger.warning("所有风格图片生成失败，使用原图制作视频")
-                try:
-                    original_resized = await self._resize_and_save_image(
-                        original_image_path,
-                        target_size,
-                        temp_path / "frame_000.jpg"
-                    )
-                    image_sequence.append(original_resized)
-                    self.logger.info(f"强制添加原始图片: {original_resized}")
-                except Exception as e:
-                    self.logger.error(f"处理原图失败: {str(e)}")
-                    raise Exception("没有可用的图片进行视频合成")
+                base_images.append(('original', original_image_path))
             else:
                 raise Exception("没有可用的图片进行视频合成")
+        
+        self.logger.info(f"基础图片序列数量: {len(base_images)}, 需要循环 {image_multiplier} 倍")
+        
+        # 根据倍数循环生成最终图片序列
+        frame_number = 0
+        for cycle in range(image_multiplier):
+            self.logger.info(f"处理第 {cycle + 1}/{image_multiplier} 轮循环")
+            
+            for img_type, image_path in base_images:
+                output_path = temp_path / f"frame_{frame_number:03d}.jpg"
+                
+                try:
+                    resized_path = await self._resize_and_save_image(
+                        image_path,
+                        target_size,
+                        output_path
+                    )
+                    image_sequence.append(resized_path)
+                    self.logger.info(f"图片处理成功 (第{cycle+1}轮-{img_type}): {image_path} -> {resized_path}")
+                    frame_number += 1
+                except Exception as e:
+                    self.logger.error(f"图片处理失败 {image_path}: {str(e)}")
+        
+        # 最终检查
+        if not image_sequence:
+            raise Exception("图片序列处理完成后仍然为空")
         
         self.logger.info(f"准备了 {len(image_sequence)} 张图片用于视频合成")
         # 输出所有图片路径
@@ -290,16 +298,17 @@ class VideoComposer:
         self,
         image_sequence: List[str],
         config: Dict,
-        temp_path: Path
+        temp_path: Path,
+        progress_callback: Optional[Callable] = None
     ) -> str:
         """从图片序列创建视频"""
         try:
             # 如果只有一张图片，使用简单模式
             if len(image_sequence) <= 1:
-                return await self._create_simple_video(image_sequence, config, temp_path)
+                return await self._create_simple_video(image_sequence, config, temp_path, progress_callback)
             
             # 多张图片使用转场模式
-            return await self._create_video_with_transitions(image_sequence, config, temp_path)
+            return await self._create_video_with_transitions(image_sequence, config, temp_path, progress_callback)
             
         except Exception as e:
             self.logger.error(f"创建视频失败: {str(e)}")
@@ -309,7 +318,8 @@ class VideoComposer:
         self,
         image_sequence: List[str],
         config: Dict,
-        temp_path: Path
+        temp_path: Path,
+        progress_callback: Optional[Callable] = None
     ) -> str:
         """创建简单视频（无转场）"""
         try:
@@ -318,6 +328,9 @@ class VideoComposer:
             per_slide_seconds = config['per_slide_seconds']
             
             self.logger.info(f"创建简单视频，图片数量: {len(image_sequence)}")
+            
+            if progress_callback:
+                progress_callback(10)
             
             # 生成FFmpeg的concat文件
             with open(image_list_file, 'w', encoding='utf-8') as f:
@@ -338,6 +351,9 @@ class VideoComposer:
                 if image_sequence:
                     last_absolute_path = str(Path(image_sequence[-1]).absolute()).replace('\\', '/')
                     f.write(f"file '{last_absolute_path}'\n")
+            
+            if progress_callback:
+                progress_callback(30)
             
             # 输出视频路径
             output_video = temp_path / "video_no_audio.mp4"
@@ -362,7 +378,10 @@ class VideoComposer:
                 str(output_video.absolute())
             ]
             
-            return await self._execute_ffmpeg_command(cmd, output_video, temp_path, "简单视频合成")
+            if progress_callback:
+                progress_callback(50)
+            
+            return await self._execute_ffmpeg_command(cmd, output_video, temp_path, "简单视频合成", progress_callback)
             
         except Exception as e:
             self.logger.error(f"创建简单视频失败: {str(e)}")
@@ -372,7 +391,8 @@ class VideoComposer:
         self,
         image_sequence: List[str],
         config: Dict,
-        temp_path: Path
+        temp_path: Path,
+        progress_callback: Optional[Callable] = None
     ) -> str:
         """创建带转场效果的视频"""
         try:
@@ -393,14 +413,22 @@ class VideoComposer:
             self.logger.info(f"创建带转场效果的视频，图片数量: {len(image_sequence)}")
             self.logger.info(f"每张图片持续: {per_slide_seconds}s，转场时间: {transition_seconds}s")
             
+            if progress_callback:
+                progress_callback(5)
+            
             # 验证所有图片文件存在
             for i, image_path in enumerate(image_sequence):
                 if not os.path.exists(image_path):
                     self.logger.error(f"图片文件不存在: {image_path}")
                     raise Exception(f"图片文件不存在: {image_path}")
             
+            if progress_callback:
+                progress_callback(10)
+            
             # 第一步：为每张图片创建独立的视频片段
             video_segments = []
+            total_segments = len(image_sequence)
+            
             for i, image_path in enumerate(image_sequence):
                 segment_video = temp_path / f"segment_{i:03d}.mp4"
                 
@@ -421,21 +449,43 @@ class VideoComposer:
                 ]
                 
                 self.logger.info(f"创建视频片段 {i+1}/{len(image_sequence)}: {segment_video.name}")
-                await self._execute_ffmpeg_command(cmd, segment_video, temp_path, f"视频片段{i+1}")
+                
+                # 计算单个片段的进度：10-60%区间
+                segment_start_progress = 10 + (i * 50) // total_segments
+                segment_end_progress = 10 + ((i + 1) * 50) // total_segments
+                
+                # 进度回调传递给单个片段
+                segment_callback = None
+                if progress_callback:
+                    segment_callback = lambda p: progress_callback(segment_start_progress + (segment_end_progress - segment_start_progress) * p / 100)
+                
+                await self._execute_ffmpeg_command(cmd, segment_video, temp_path, f"视频片段{i+1}", segment_callback)
                 video_segments.append(str(segment_video.absolute()))
+                
+                # 更新片段完成进度
+                if progress_callback:
+                    progress_callback(segment_end_progress)
             
             # 第二步：使用xfade滤镜连接所有片段
             output_video = temp_path / "video_no_audio.mp4"
+            
+            if progress_callback:
+                progress_callback(65)
             
             if len(video_segments) == 1:
                 # 只有一个片段，直接复制
                 shutil.copy(video_segments[0], str(output_video))
                 self.logger.info("只有一个视频片段，直接使用")
+                if progress_callback:
+                    progress_callback(95)
             else:
                 # 构建复杂的filter_complex命令
                 inputs = []
                 for segment in video_segments:
                     inputs.extend(['-i', segment])
+                
+                if progress_callback:
+                    progress_callback(70)
                 
                 # 构建xfade滤镜链
                 filter_parts = []
@@ -459,6 +509,9 @@ class VideoComposer:
                 
                 filter_complex = ";".join(filter_parts)
                 
+                if progress_callback:
+                    progress_callback(75)
+                
                 cmd = [
                     self.config.FFMPEG_PATH,
                 ] + inputs + [
@@ -477,7 +530,16 @@ class VideoComposer:
                 ]
                 
                 self.logger.info(f"执行转场合成，filter_complex: {filter_complex}")
-                await self._execute_ffmpeg_command(cmd, output_video, temp_path, "转场视频合成")
+                
+                # 转场合成阶段的进度回调：75-95%
+                transition_callback = None
+                if progress_callback:
+                    transition_callback = lambda p: progress_callback(75 + p * 0.2)
+                
+                await self._execute_ffmpeg_command(cmd, output_video, temp_path, "转场视频合成", transition_callback)
+            
+            if progress_callback:
+                progress_callback(100)
             
             return str(output_video)
             
@@ -490,31 +552,123 @@ class VideoComposer:
         cmd: List[str],
         output_file: Path,
         temp_path: Path,
-        operation_name: str
+        operation_name: str,
+        progress_callback: Optional[Callable] = None
     ) -> str:
         """执行FFmpeg命令的通用方法"""
         try:
             self.logger.info(f"开始{operation_name}...")
             self.logger.info(f"FFmpeg命令: {' '.join(cmd)}")
             
-            # 执行命令 - 使用同步方式以避免 Windows 上的 asyncio 限制
-            import subprocess
+            # 初始进度
+            if progress_callback:
+                progress_callback(0)
             
-            process = subprocess.run(
+            # 执行命令 - 使用异步方式以监控进度
+            import subprocess
+            import asyncio
+            import re
+            
+            # 启动FFmpeg进程
+            process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=str(temp_path),
-                timeout=600  # 10分钟超时（转场处理可能需要更长时间）
+                universal_newlines=True,
+                bufsize=1
             )
             
-            stdout = process.stdout
-            stderr = process.stderr
-            returncode = process.returncode
+            # 监控进度
+            progress_pattern = re.compile(r'frame=\s*(\d+)')
+            time_pattern = re.compile(r'time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})')
             
-            # 记录输出信息
-            stdout_text = stdout.decode('utf-8', errors='ignore') if stdout else ''
-            stderr_text = stderr.decode('utf-8', errors='ignore') if stderr else ''
+            stdout_lines = []
+            stderr_lines = []
+            
+            # 异步读取输出
+            async def read_output():
+                loop = asyncio.get_event_loop()
+                
+                def read_stderr():
+                    lines = []
+                    try:
+                        while True:
+                            line = process.stderr.readline()
+                            if not line:
+                                break
+                            lines.append(line)
+                            
+                            # 解析进度信息
+                            if progress_callback:
+                                frame_match = progress_pattern.search(line)
+                                time_match = time_pattern.search(line)
+                                
+                                if frame_match or time_match:
+                                    # 根据不同操作类型估算进度
+                                    if "视频片段" in operation_name:
+                                        # 单个片段进度可以基于时间估算
+                                        if time_match:
+                                            hours = int(time_match.group(1))
+                                            minutes = int(time_match.group(2))
+                                            seconds = int(time_match.group(3))
+                                            total_seconds = hours * 3600 + minutes * 60 + seconds
+                                            
+                                            # 根据预期时长估算进度（简单估算）
+                                            estimated_duration = 10  # 假设最大10秒
+                                            progress = min(90, (total_seconds / estimated_duration) * 100)
+                                            progress_callback(progress)
+                                    
+                                    elif frame_match:
+                                        frame_count = int(frame_match.group(1))
+                                        # 基于帧数估算进度
+                                        if frame_count > 0:
+                                            # 简单的帧数进度估算
+                                            estimated_frames = 300  # 假设大概300帧
+                                            progress = min(90, (frame_count / estimated_frames) * 100)
+                                            progress_callback(progress)
+                    except Exception as e:
+                        self.logger.debug(f"读取stderr时出错: {e}")
+                    return lines
+                
+                def read_stdout():
+                    lines = []
+                    try:
+                        while True:
+                            line = process.stdout.readline()
+                            if not line:
+                                break
+                            lines.append(line)
+                    except Exception as e:
+                        self.logger.debug(f"读取stdout时出错: {e}")
+                    return lines
+                
+                # 在线程池中执行读取操作
+                stderr_task = loop.run_in_executor(None, read_stderr)
+                stdout_task = loop.run_in_executor(None, read_stdout)
+                
+                # 等待进程完成或超时
+                timeout = 600  # 10分钟超时
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(stderr_task, stdout_task),
+                        timeout=timeout
+                    )
+                    stderr_lines.extend(await stderr_task)
+                    stdout_lines.extend(await stdout_task)
+                except asyncio.TimeoutError:
+                    process.kill()
+                    raise subprocess.TimeoutExpired(cmd, timeout)
+            
+            # 执行输出读取
+            await read_output()
+            
+            # 等待进程结束
+            returncode = process.wait()
+            
+            # 处理输出
+            stdout_text = ''.join(stdout_lines)
+            stderr_text = ''.join(stderr_lines)
             
             self.logger.info(f"{operation_name} 返回码: {returncode}")
             if stdout_text:
@@ -531,6 +685,9 @@ class VideoComposer:
                 file_size = output_file.stat().st_size
                 if file_size > 0:
                     self.logger.info(f"{operation_name}成功: {output_file} (大小: {file_size} 字节)")
+                    # 最终进度
+                    if progress_callback:
+                        progress_callback(100)
                     return str(output_file)
                 else:
                     self.logger.error(f"{operation_name}生成的文件为空: {output_file}")
@@ -556,15 +713,21 @@ class VideoComposer:
         video_path: str,
         audio_path: Optional[str],
         config: Dict,
-        temp_path: Path
+        temp_path: Path,
+        progress_callback: Optional[Callable] = None
     ) -> str:
         """为视频添加音频"""
         output_video = temp_path / "final_video.mp4"
+        
+        if progress_callback:
+            progress_callback(70)
         
         if not audio_path or not os.path.exists(audio_path):
             # 没有音频，直接复制视频
             shutil.copy2(video_path, output_video)
             self.logger.info("没有音频文件，使用原视频")
+            if progress_callback:
+                progress_callback(90)
             return str(output_video)
         
         try:
@@ -604,6 +767,9 @@ class VideoComposer:
             # 使用同步 subprocess 以避免 Windows 上的 asyncio 限制
             import subprocess
             
+            if progress_callback:
+                progress_callback(80)
+            
             try:
                 process = subprocess.run(
                     cmd,
@@ -611,6 +777,9 @@ class VideoComposer:
                     stderr=subprocess.PIPE,
                     timeout=300  # 5分钟超时
                 )
+                
+                if progress_callback:
+                    progress_callback(85)
                 
                 if process.returncode != 0:
                     error_msg = process.stderr.decode('utf-8', errors='ignore')
@@ -625,6 +794,9 @@ class VideoComposer:
                 self.logger.error("音频添加超时")
                 shutil.copy2(video_path, output_video)
                 self.logger.warning("音频添加超时，返回无音频视频")
+            
+            if progress_callback:
+                progress_callback(90)
             
             return str(output_video)
             

@@ -69,6 +69,7 @@ class RegenerateVideoRequest(BaseModel):
     transition_effects: Optional[List[str]] = None
     width: int = 1280
     height: int = 720
+    image_multiplier: int = 1
 
 class GenerateImagesRequest(BaseModel):
     """只生成图片的请求模型"""
@@ -199,22 +200,61 @@ async def delete_history_task(task_id: str):
         
         deleted_files = []
         
-        # 删除任务相关的图片文件
+        # 获取所有历史任务，用于检查文件引用
+        all_tasks = await db_service.get_history_tasks(limit=1000)
+        
+        # 收集所有其他任务引用的文件ID
+        referenced_file_ids = set()
+        for other_task in all_tasks:
+            if other_task.get('task_id') != task_id:  # 排除当前要删除的任务
+                # 收集图片文件ID
+                if other_task.get('images'):
+                    for img in other_task['images']:
+                        if img and 'file_id' in img:
+                            referenced_file_ids.add(img['file_id'])
+                
+                # 收集原始图片ID
+                if other_task.get('original_image_id'):
+                    referenced_file_ids.add(other_task['original_image_id'])
+                
+                # 收集视频文件ID
+                if other_task.get('video_id'):
+                    referenced_file_ids.add(other_task['video_id'])
+        
+        logger.info(f"其他任务引用的文件ID数量: {len(referenced_file_ids)}")
+        
+        # 删除任务相关的图片文件（只删除未被其他任务引用的文件）
         if task.get('images'):
             for img in task['images']:
                 if img and 'file_id' in img:
-                    if file_manager.delete_file(img['file_id']):
-                        deleted_files.append(f"image:{img['file_id']}")
+                    file_id = img['file_id']
+                    if file_id not in referenced_file_ids:
+                        # 此文件未被其他任务引用，可以安全删除
+                        if file_manager.delete_file(file_id):
+                            deleted_files.append(f"image:{file_id}")
+                            logger.info(f"删除未引用的图片文件: {file_id}")
+                    else:
+                        logger.info(f"保留被其他任务引用的图片文件: {file_id}")
         
-        # 删除原始图片文件
+        # 删除原始图片文件（只删除未被其他任务引用的文件）
         if task.get('original_image_id'):
-            if file_manager.delete_file(task['original_image_id']):
-                deleted_files.append(f"original:{task['original_image_id']}")
+            file_id = task['original_image_id']
+            if file_id not in referenced_file_ids:
+                if file_manager.delete_file(file_id):
+                    deleted_files.append(f"original:{file_id}")
+                    logger.info(f"删除未引用的原始图片: {file_id}")
+            else:
+                logger.info(f"保留被其他任务引用的原始图片: {file_id}")
         
-        # 删除视频文件
+        # 删除视频文件（只删除未被其他任务引用的文件）
         if task.get('video_id'):
-            if file_manager.delete_file(task['video_id']):
-                deleted_files.append(f"video:{task['video_id']}")
+            file_id = task['video_id']
+            if file_id not in referenced_file_ids:
+                if file_manager.delete_file(file_id):
+                    deleted_files.append(f"video:{file_id}")
+                    logger.info(f"删除未引用的视频文件: {file_id}")
+            else:
+                logger.info(f"保留被其他任务引用的视频文件: {file_id}")
         
         # 从MongoDB删除任务记录
         success = await db_service.delete_history_task(task_id)
@@ -225,7 +265,7 @@ async def delete_history_task(task_id: str):
         
         return {
             'success': True,
-            'message': f'历史任务删除成功',
+            'message': f'历史任务删除成功，已删除 {len(deleted_files)} 个文件',
             'deleted_files': deleted_files,
             'task_id': task_id
         }
@@ -235,6 +275,86 @@ async def delete_history_task(task_id: str):
     except Exception as e:
         logger.error(f"删除历史任务失败 (task_id: {task_id}): {str(e)}")
         raise HTTPException(status_code=500, detail=f'删除失败: {str(e)}')
+
+@app.post('/api/database/cleanup-orphaned-files')
+async def cleanup_orphaned_files():
+    """清理孤儿文件（未被任何任务引用的文件）"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 获取所有历史任务
+        all_tasks = await db_service.get_history_tasks(limit=1000)
+        
+        # 收集所有被引用的文件ID
+        referenced_file_ids = set()
+        for task in all_tasks:
+            # 收集图片文件ID
+            if task.get('images'):
+                for img in task['images']:
+                    if img and 'file_id' in img:
+                        referenced_file_ids.add(img['file_id'])
+            
+            # 收集原始图片ID
+            if task.get('original_image_id'):
+                referenced_file_ids.add(task['original_image_id'])
+            
+            # 收集视频文件ID
+            if task.get('video_id'):
+                referenced_file_ids.add(task['video_id'])
+        
+        # 从活跃任务中收集引用
+        for task_info in active_tasks.values():
+            if task_info.get('images'):
+                for img in task_info['images']:
+                    if img and img.get('file_id'):
+                        referenced_file_ids.add(img['file_id'])
+            if task_info.get('original_image_id'):
+                referenced_file_ids.add(task_info['original_image_id'])
+            if task_info.get('video_id'):
+                referenced_file_ids.add(task_info['video_id'])
+        
+        logger.info(f"总共发现 {len(referenced_file_ids)} 个被引用的文件")
+        
+        # 扫描所有存储目录，查找孤儿文件
+        orphaned_files = []
+        storage_dirs = [
+            file_manager.uploads_path,
+            file_manager.generated_path,
+            file_manager.videos_path
+        ]
+        
+        for storage_dir in storage_dirs:
+            if storage_dir.exists():
+                for file_path in storage_dir.iterdir():
+                    if file_path.is_file():
+                        # 从文件名提取文件ID
+                        filename = file_path.stem  # 不包含扩展名
+                        if filename not in referenced_file_ids:
+                            orphaned_files.append(str(file_path))
+        
+        # 删除孤儿文件
+        deleted_count = 0
+        for file_path in orphaned_files:
+            try:
+                os.remove(file_path)
+                deleted_count += 1
+                logger.info(f"删除孤儿文件: {file_path}")
+            except Exception as e:
+                logger.error(f"删除孤儿文件失败 {file_path}: {str(e)}")
+        
+        return {
+            'success': True,
+            'message': f'清理完成，删除了 {deleted_count} 个孤儿文件',
+            'total_referenced': len(referenced_file_ids),
+            'orphaned_found': len(orphaned_files),
+            'deleted_count': deleted_count
+        }
+        
+    except Exception as e:
+        logger.error(f"清理孤儿文件失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f'清理失败: {str(e)}')
 
 @app.post('/api/database/cleanup-invalid-images')
 async def cleanup_invalid_image_references():
@@ -611,7 +731,8 @@ async def regenerate_video_from_history(request: RegenerateVideoRequest, backgro
             'transition_effects': request.transition_effects,
             'width': request.width,
             'height': request.height,
-            'include_original': history_task['config'].get('include_original', True)
+            'include_original': history_task['config'].get('include_original', True),
+            'image_multiplier': request.image_multiplier
         }
         
         # 初始化新任务状态
@@ -801,13 +922,17 @@ async def regenerate_video_async(task_id: str, original_image_id: str,
     try:
         # 更新任务状态
         active_tasks[task_id]['status'] = 'processing'
-        active_tasks[task_id]['message'] = '正在重新合成视频...'
-        active_tasks[task_id]['progress'] = 30
+        active_tasks[task_id]['message'] = '正在从历史任务重新生成视频...'
+        active_tasks[task_id]['progress'] = 10
         
         # 获取原始图片路径
         image_path = file_manager.get_file_path(original_image_id)
         if not image_path:
             raise Exception('原始图片不存在')
+        
+        # 更新进度
+        active_tasks[task_id]['progress'] = 20
+        active_tasks[task_id]['message'] = '正在准备音频文件...'
         
         # 准备视频合成
         audio_path = None
@@ -815,8 +940,8 @@ async def regenerate_video_async(task_id: str, original_image_id: str,
             audio_path = file_manager.get_file_path(audio_id)
             logger.info(f"音频文件路径: {audio_path}")
         
-        active_tasks[task_id]['progress'] = 50
-        active_tasks[task_id]['message'] = '正在合成视频...'
+        active_tasks[task_id]['progress'] = 30
+        active_tasks[task_id]['message'] = '正在准备图片序列...'
         
         # 使用现有图片合成视频
         image_file_ids = [img['file_id'] for img in existing_images if img and 'file_id' in img]
@@ -827,6 +952,9 @@ async def regenerate_video_async(task_id: str, original_image_id: str,
         logger.info(f"  - 音频路径: {audio_path}")
         logger.info(f"  - 配置: {config}")
         
+        active_tasks[task_id]['progress'] = 40
+        active_tasks[task_id]['message'] = '正在开始视频合成...'
+        
         # 合成视频
         video_path = await video_composer.compose_video(
             image_path, 
@@ -834,8 +962,12 @@ async def regenerate_video_async(task_id: str, original_image_id: str,
             audio_path,
             config,
             task_id,
-            progress_callback=lambda p: update_progress(task_id, 50 + p * 0.4, '正在合成视频...')
+            progress_callback=lambda p: update_progress(task_id, 40 + p * 0.5, '正在重新合成视频...')
         )
+        
+        # 更新进度
+        active_tasks[task_id]['progress'] = 90
+        active_tasks[task_id]['message'] = '正在保存视频文件...'
         
         # 保存视频并获取URL
         video_info = file_manager.save_video_file(video_path)
