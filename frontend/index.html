@@ -1,0 +1,1982 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stylize Video - AI视频风格转换工具</title>
+  <style>
+    :root{--bg:#0f172a;--panel:#111827;--text:#e5e7eb;--muted:#9ca3af;--accent:#22d3ee;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;--card:#0b1220}
+    *{box-sizing:border-box} 
+    body{margin:0;background:linear-gradient(180deg,#0b1020,#0b1329 40%,#0a0f1a);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto;min-height:100vh}
+    header{padding:20px 16px 8px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,.06)}
+    h1{font-size:18px;margin:0} a{color:var(--accent);text-decoration:none}
+    .wrap{max-width:1200px;margin:0 auto;padding:12px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .card{background:radial-gradient(1200px 400px at -10% -10%,rgba(34,211,238,.1),transparent 40%),radial-gradient(1200px 400px at 110% 110%,rgba(34,197,94,.08),transparent 40%),var(--card);border:1px solid rgba(255,255,255,.06);border-radius:16px;box-shadow:0 6px 22px rgba(0,0,0,.35)}
+    .card h2{font-size:16px;margin:0;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+    .card .body{padding:14px 16px}
+    label{display:block;margin:.5rem 0 .25rem;color:var(--muted);font-size:12px}
+    input[type=text],input[type=password],input[type=number],select,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:#0b1120;color:var(--text);font-size:13px}
+    input[type=file]{border:1px dashed rgba(255,255,255,.25);padding:16px;border-radius:12px;width:100%;background:#0b1120;color:var(--muted)}
+    button{cursor:pointer;background:linear-gradient(90deg,#22d3ee,#22c55e);border:none;color:#02111a;font-weight:700;letter-spacing:.2px;transition:all .2s}
+    button:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(34,211,238,.3)}
+    button:disabled{filter:grayscale(1);opacity:.55;cursor:not-allowed;transform:none}
+    .row{display:flex;gap:10px;align-items:center}
+    .muted{color:var(--muted)}
+    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.1);background:#0b1120;border-radius:999px;padding:6px 10px;margin:4px 6px 0 0;font-size:12px;text-decoration:none}
+    .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:12px}
+    .thumb{position:relative;background:#000;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1)}
+    .thumb img{display:block;width:100%;height:160px;object-fit:cover}
+    .thumb .info{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(0,0,0,.8);backdrop-filter:blur(4px);padding:6px 8px;border-radius:8px;text-align:center;border:1px solid rgba(255,255,255,.2);font-size:11px}
+    .log{max-height:220px;overflow:auto;background:#0b1120;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px;font-family:monospace;font-size:12px}
+    .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+    progress{width:100%;height:14px;border-radius:7px;background:#1e293b;border:1px solid rgba(255,255,255,.1)}
+    progress::-webkit-progress-bar{background:#1e293b;border-radius:7px}
+    progress::-webkit-progress-value{background:linear-gradient(90deg,#22d3ee,#22c55e);border-radius:7px}
+    footer{padding:20px 16px;color:var(--muted);text-align:center;border-top:1px solid rgba(255,255,255,.06);margin-top:20px}
+    .tiny{font-size:12px}
+    details{border:1px solid rgba(255,255,255,.08);border-radius:8px;margin-top:8px}
+    details[open] summary{border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:0}
+    summary{padding:8px 12px;color:var(--accent);font-weight:500;cursor:pointer}
+    details .config-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+    details input[type=number], details select{font-size:12px;padding:6px 8px}
+    details label{font-size:11px;margin:.25rem 0 .125rem;color:var(--muted)}
+    .status-indicator{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+    .status-connecting{background:#f59e0b}
+    .status-connected{background:#22c55e}
+    .status-error{background:#ef4444}
+    .preview-container{margin-bottom:12px}
+    .preview-img{width:100%;height:200px;object-fit:contain;background:#000;border-radius:8px;border:1px solid rgba(255,255,255,.1)}
+    .task-status{background:rgba(255,255,255,.02);border-radius:8px;padding:12px;margin-top:12px;border:1px solid rgba(255,255,255,.08)}
+    .video-container{margin-top:12px}
+    .video-player{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1)}
+    .transition-checkbox{display:flex;align-items:center;gap:4px;font-size:10px;padding:2px 4px;border-radius:4px;cursor:pointer;transition:background-color 0.2s}
+    .transition-checkbox:hover{background:rgba(255,255,255,.05)}
+    .transition-checkbox input{width:auto;margin:0;transform:scale(0.8)}
+    .transition-checkbox label{margin:0;cursor:pointer;color:var(--muted);font-size:10px}
+    .mode-btn{width:auto;padding:6px 12px;margin:0;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:var(--muted);font-size:12px}
+    .mode-btn.active{background:linear-gradient(90deg,#22d3ee,#22c55e);color:#02111a;font-weight:600}
+    
+    /* 自定义确认对话框样式 */
+    .custom-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.3s ease}
+    .custom-modal.show{opacity:1;visibility:visible}
+    .modal-content{background:var(--card);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:24px;max-width:400px;width:90%;box-shadow:0 20px 40px rgba(0,0,0,0.5);transform:scale(0.9);transition:transform 0.3s ease}
+    .custom-modal.show .modal-content{transform:scale(1)}
+    .modal-icon{font-size:48px;text-align:center;margin-bottom:16px;color:var(--warn)}
+    .modal-title{font-size:18px;font-weight:600;margin-bottom:8px;text-align:center;color:var(--text)}
+    .modal-message{font-size:14px;color:var(--muted);text-align:center;margin-bottom:24px;line-height:1.5;white-space:pre-line;max-height:300px;overflow-y:auto}
+    .modal-buttons{display:flex;gap:12px;justify-content:center}
+    .modal-btn{padding:10px 20px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;min-width:80px}
+    .modal-btn-confirm{background:linear-gradient(90deg,#ef4444,#dc2626);color:white}
+    .modal-btn-confirm:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(239,68,68,0.4)}
+    .modal-btn-cancel{background:rgba(255,255,255,.1);color:var(--text);border:1px solid rgba(255,255,255,.2)}
+    .modal-btn-cancel:hover{background:rgba(255,255,255,.15);transform:translateY(-1px)}
+    .history-task{border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer;transition:all 0.2s;position:relative}
+    .history-task:hover{border-color:rgba(34,211,238,.3);background:rgba(34,211,238,.05)}
+    .history-task.selected{border-color:#22d3ee;background:rgba(34,211,238,.1)}
+    .history-task-title{font-size:13px;font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+    .history-task-info{font-size:11px;color:var(--muted);line-height:1.4}
+    .history-task-delete{background:rgba(239,68,68,0.8);color:white;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;font-weight:bold;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;margin-left:8px}
+    .history-task-delete:hover{background:rgba(239,68,68,1);transform:scale(1.1)}
+    @media (max-width: 768px) {
+      .grid{grid-template-columns:1fr}
+      .wrap{padding:8px}
+    }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <h1>🎨 Stylize Video</h1>
+    <div class="tiny">
+      <span id="connectionStatus" class="status-indicator status-connecting"></span>
+      <span id="connectionText">连接中...</span>
+    </div>
+  </header>
+
+  <main class="wrap grid">
+    <!-- 左：配置与操作 -->
+    <section class="card">
+      <h2>1) 配置 & 生成</h2>
+      <div class="body">
+        <!-- 模式选择 -->
+        <div style="margin-bottom: 16px">
+          <label>生成模式</label>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button type="button" id="newTaskBtn" class="mode-btn active" onclick="switchMode('new')">新任务</button>
+            <button type="button" id="imageOnlyBtn" class="mode-btn" onclick="switchMode('image-only')">仅生成图片</button>
+            <button type="button" id="historyTaskBtn" class="mode-btn" onclick="switchMode('history')">历史任务</button>
+          </div>
+        </div>
+
+        <!-- 新任务模式 -->
+        <div id="newTaskMode">
+          <label>OpenRouter API Key</label>
+          <input id="apiKey" type="password" placeholder="sk-or-v1-..." />
+
+          <label style="margin-top:10px">上传原图</label>
+          <input id="inputImage" type="file" accept="image/*" />
+          <div class="preview-container" style="margin-top:8px">
+            <img id="origPreview" class="preview-img" style="display:none" alt="原图预览" />
+          </div>
+
+          <label style="margin-top:10px">选择本地背景音乐（可选）</label>
+          <input id="bgmFile" type="file" accept="audio/*" />
+
+          <details style="margin-top:16px">
+            <summary>⚙️ 高级配置</summary>
+            <div class="config-grid">
+              <div>
+                <label>风格图数量</label>
+                <input id="slideCount" type="number" value="2" min="1" max="20" />
+              </div>
+              <div>
+                <label>帧率 (FPS)</label>
+                <input id="videoFps" type="number" value="30" min="15" max="60" />
+              </div>
+              <div>
+                <label>每张图持续时间 (秒)</label>
+                <input id="perSlideSeconds" type="number" value="3.0" min="0.5" max="5" step="0.1" />
+              </div>
+              <div>
+                <label>过渡时间 (秒)</label>
+                <input id="transitionSeconds" type="number" value="0.6" min="0" max="1" step="0.1" />
+              </div>
+              <div style="grid-column: span 2">
+                <label>转场效果选择 (可多选，循环使用)</label>
+                <div style="display:flex;gap:4px;margin:4px 0;font-size:10px">
+                  <button type="button" onclick="selectAllTransitions()" style="padding:2px 6px;font-size:10px;width:auto">全选</button>
+                  <button type="button" onclick="selectNoneTransitions()" style="padding:2px 6px;font-size:10px;width:auto">清空</button>
+                  <button type="button" onclick="selectSlideTransitions()" style="padding:2px 6px;font-size:10px;width:auto">只选滑动</button>
+                  <button type="button" onclick="selectFadeTransitions()" style="padding:2px 6px;font-size:10px;width:auto">只选淡化</button>
+                </div>
+                <div id="transitionEffects" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px;max-height:120px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px">
+                  <!-- 转场效果选项将由JavaScript生成 -->
+                </div>
+              </div>
+              <div>
+                <label>视频宽度</label>
+                <select id="videoWidth">
+                  <option value="720">720 (抖音竖屏)</option>
+                  <option value="1280">1280 (720p)</option>
+                  <option value="1920">1920 (1080p)</option>
+                  <option value="854">854 (480p)</option>
+                </select>
+              </div>
+              <div>
+                <label>视频高度</label>
+                <select id="videoHeight">
+                  <option value="1280">1280 (抖音竖屏)</option>
+                  <option value="720">720</option>
+                  <option value="1080">1080</option>
+                  <option value="480">480</option>
+                </select>
+              </div>
+              <div>
+                <label>并发请求数</label>
+                <input id="concurrentLimit" type="number" value="1" min="1" max="5" />
+              </div>
+              <div style="display:flex;align-items:center;padding-top:20px">
+                <label style="margin:0">
+                  <input id="includeOriginal" type="checkbox" checked style="width:auto;margin-right:6px" /> 
+                  在视频中包含原图
+                </label>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- 仅生成图片模式 -->
+        <div id="imageOnlyMode" style="display:none">
+          <label>OpenRouter API Key</label>
+          <input id="imageApiKey" type="password" placeholder="sk-or-v1-..." />
+
+          <label style="margin-top:10px">上传原图</label>
+          <input id="imageInputImage" type="file" accept="image/*" />
+          <div class="preview-container" style="margin-top:8px">
+            <img id="imageOrigPreview" class="preview-img" style="display:none" alt="原图预览" />
+          </div>
+
+          <details style="margin-top:16px">
+            <summary>⚙️ 生成配置</summary>
+            <div class="config-grid">
+              <div>
+                <label>风格图数量</label>
+                <input id="imageSlideCount" type="number" value="2" min="1" max="20" />
+              </div>
+              <div>
+                <label>并发请求数</label>
+                <input id="imageConcurrentLimit" type="number" value="1" min="1" max="5" />
+              </div>
+            </div>
+          </details>
+          
+          <!-- 图片选择管理区域 -->
+          <div id="imageSelectionArea" style="display:none;margin-top:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <h3 style="font-size:14px;margin:0">选择要包含的图片</h3>
+              <div style="display:flex;gap:8px">
+                <button type="button" onclick="selectAllImages()" style="padding:4px 8px;font-size:11px;width:auto">全选</button>
+                <button type="button" onclick="selectNoneImages()" style="padding:4px 8px;font-size:11px;width:auto">全不选</button>
+              </div>
+            </div>
+            <div id="imageGallerySelection" class="gallery">
+              <!-- 图片选择列表将由JavaScript生成 -->
+            </div>
+            
+            <!-- 视频合成配置 -->
+            <details style="margin-top:16px">
+              <summary>⚙️ 视频合成配置</summary>
+              <div class="config-grid">
+                <div>
+                  <label>帧率 (FPS)</label>
+                  <input id="composeVideoFps" type="number" value="30" min="15" max="60" />
+                </div>
+                <div>
+                  <label>每张图持续时间 (秒)</label>
+                  <input id="composePerSlideSeconds" type="number" value="3.0" min="0.5" max="5" step="0.1" />
+                </div>
+                <div>
+                  <label>过渡时间 (秒)</label>
+                  <input id="composeTransitionSeconds" type="number" value="0.6" min="0" max="1" step="0.1" />
+                </div>
+                <div>
+                  <label>视频宽度</label>
+                  <select id="composeVideoWidth">
+                    <option value="720">720 (抖音竖屏)</option>
+                    <option value="1280">1280 (720p)</option>
+                    <option value="1920">1920 (1080p)</option>
+                    <option value="854">854 (480p)</option>
+                  </select>
+                </div>
+                <div>
+                  <label>视频高度</label>
+                  <select id="composeVideoHeight">
+                    <option value="1280">1280 (抖音竖屏)</option>
+                    <option value="720">720</option>
+                    <option value="1080">1080</option>
+                    <option value="480">480</option>
+                  </select>
+                </div>
+                <div style="grid-column: span 2">
+                  <label>转场效果选择 (可多选，循环使用)</label>
+                  <div style="display:flex;gap:4px;margin:4px 0;font-size:10px">
+                    <button type="button" onclick="selectAllComposeTransitions()" style="padding:2px 6px;font-size:10px;width:auto">全选</button>
+                    <button type="button" onclick="selectNoneComposeTransitions()" style="padding:2px 6px;font-size:10px;width:auto">清空</button>
+                    <button type="button" onclick="selectSlideComposeTransitions()" style="padding:2px 6px;font-size:10px;width:auto">只选滑动</button>
+                    <button type="button" onclick="selectFadeComposeTransitions()" style="padding:2px 6px;font-size:10px;width:auto">只选淡化</button>
+                  </div>
+                  <div id="composeTransitionEffects" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px;max-height:120px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px">
+                    <!-- 转场效果选项将由JavaScript生成 -->
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;padding-top:20px">
+                  <label style="margin:0">
+                    <input id="composeIncludeOriginal" type="checkbox" checked style="width:auto;margin-right:6px" /> 
+                    在视频中包含原图
+                  </label>
+                </div>
+              </div>
+            </details>
+            
+            <label style="margin-top:10px">选择本地背景音乐（可选）</label>
+            <input id="composeBgmFile" type="file" accept="audio/*" />
+          </div>
+        </div>
+
+        <!-- 历史任务模式 -->
+        <div id="historyTaskMode" style="display:none">
+          <div style="margin-bottom:10px">
+            <button type="button" onclick="loadHistoryTasks()" style="width:auto;padding:8px 16px">刷新列表</button>
+          </div>
+          <div id="historyTasksList" style="max-height:400px;overflow-y:auto">
+            <!-- 历史任务列表将由JavaScript生成 -->
+          </div>
+          
+          <!-- 选中任务的配置 -->
+          <div id="historyTaskConfig" style="display:none;margin-top:16px">
+            <h3 style="font-size:14px;margin:0 0 12px 0">重新生成配置</h3>
+            <div class="config-grid">
+              <div>
+                <label>帧率 (FPS)</label>
+                <input id="historyVideoFps" type="number" value="30" min="15" max="60" />
+              </div>
+              <div>
+                <label>每张图持续时间 (秒)</label>
+                <input id="historyPerSlideSeconds" type="number" value="3.0" min="0.5" max="5" step="0.1" />
+              </div>
+              <div>
+                <label>过渡时间 (秒)</label>
+                <input id="historyTransitionSeconds" type="number" value="0.6" min="0" max="1" step="0.1" />
+              </div>
+              <div>
+                <label>视频宽度</label>
+                <select id="historyVideoWidth">
+                  <option value="720">720 (抖音竖屏)</option>
+                  <option value="1280">1280 (720p)</option>
+                  <option value="1920">1920 (1080p)</option>
+                  <option value="854">854 (480p)</option>
+                </select>
+              </div>
+              <div>
+                <label>视频高度</label>
+                <select id="historyVideoHeight">
+                  <option value="1280">1280 (抖音竖屏)</option>
+                  <option value="720">720</option>
+                  <option value="1080">1080</option>
+                  <option value="480">480</option>
+                </select>
+              </div>
+              <div>
+                <label>背景音乐 (可选)</label>
+                <input id="historyBgmFile" type="file" accept="audio/*" />
+              </div>
+              <div style="grid-column: span 2">
+                <label>转场效果选择</label>
+                <div style="display:flex;gap:4px;margin:4px 0;font-size:10px">
+                  <button type="button" onclick="selectAllHistoryTransitions()" style="padding:2px 6px;font-size:10px;width:auto">全选</button>
+                  <button type="button" onclick="selectNoneHistoryTransitions()" style="padding:2px 6px;font-size:10px;width:auto">清空</button>
+                  <button type="button" onclick="selectSlideHistoryTransitions()" style="padding:2px 6px;font-size:10px;width:auto">只选滑动</button>
+                  <button type="button" onclick="selectFadeHistoryTransitions()" style="padding:2px 6px;font-size:10px;width:auto">只选淡化</button>
+                </div>
+                <div id="historyTransitionEffects" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px;max-height:120px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px">
+                  <!-- 转场效果选项将由JavaScript生成 -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px" class="row">
+          <button id="startBtn">开始生成并合成视频</button>
+        </div>
+
+        <div id="taskStatus" class="task-status" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span id="taskMessage">准备中...</span>
+            <span id="taskProgress">0%</span>
+          </div>
+          <progress id="prog" value="0" max="100"></progress>
+          <div id="log" class="log" style="margin-top:8px;max-height:150px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右：结果预览 -->
+    <section class="card">
+      <h2>2) 结果 & 下载</h2>
+      <div class="body">
+        <div id="imagesSection">
+          <div class="muted tiny">生成的风格化图片</div>
+          <div id="gallery" class="gallery"></div>
+        </div>
+        
+        <div id="videoSection" class="video-container" style="display:none">
+          <div class="muted tiny">合成视频</div>
+          <video id="videoOut" class="video-player" controls playsinline></video>
+          <div class="row" style="margin-top:8px">
+            <a id="dlVideo" class="pill" download="stylized_slideshow.mp4">📥 下载视频</a>
+            <a id="dlOrig" class="pill" download="original.jpg">📸 下载原图</a>
+          </div>
+        </div>
+
+        <div id="statsSection" style="margin-top:16px;display:none">
+          <div class="tiny muted">生成统计</div>
+          <div id="stats" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="tiny" id="footerInfo">AI驱动的视频风格转换工具 - 完全本地运行，保护隐私安全</div>
+  </footer>
+
+  <!-- 自定义确认对话框 -->
+  <div id="customModal" class="custom-modal">
+    <div class="modal-content">
+      <div class="modal-icon">⚠️</div>
+      <div class="modal-title">确认删除</div>
+      <div class="modal-message">确定要删除这张图片吗？删除后将无法恢复。</div>
+      <div class="modal-buttons">
+        <button class="modal-btn modal-btn-cancel" onclick="hideCustomModal(false)">取消</button>
+        <button class="modal-btn modal-btn-confirm" onclick="hideCustomModal(true)">删除</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // API配置
+  const API_BASE = '/api';
+  
+  // DOM元素
+  const el = (id) => document.getElementById(id);
+  const apiKeyInput = el('apiKey');
+  const inputImage = el('inputImage');
+  const bgmFile = el('bgmFile');
+  const startBtn = el('startBtn');
+  const origPreview = el('origPreview');
+  const gallery = el('gallery');
+  const videoOut = el('videoOut');
+  const dlVideo = el('dlVideo');
+  const dlOrig = el('dlOrig');
+  const taskStatus = el('taskStatus');
+  const taskMessage = el('taskMessage');
+  const taskProgress = el('taskProgress');
+  const prog = el('prog');
+  const logBox = el('log');
+  const connectionStatus = el('connectionStatus');
+  const connectionText = el('connectionText');
+  const videoSection = el('videoSection');
+  const statsSection = el('statsSection');
+
+  // 配置控件
+  const slideCountInput = el('slideCount');
+  const videoFpsInput = el('videoFps');
+  const perSlideSecondsInput = el('perSlideSeconds');
+  const transitionSecondsInput = el('transitionSeconds');
+  const videoWidthSelect = el('videoWidth');
+  const videoHeightSelect = el('videoHeight');
+  const includeOriginalCheckbox = el('includeOriginal');
+  const concurrentLimitInput = el('concurrentLimit');
+  const transitionEffectsContainer = el('transitionEffects');
+
+  // 历史任务相关元素
+  const newTaskMode = el('newTaskMode');
+  const historyTaskMode = el('historyTaskMode');
+  const historyTasksList = el('historyTasksList');
+  const historyTaskConfig = el('historyTaskConfig');
+  const historyVideoFpsInput = el('historyVideoFps');
+  const historyPerSlideSecondsInput = el('historyPerSlideSeconds');
+  const historyTransitionSecondsInput = el('historyTransitionSeconds');
+  const historyVideoWidthSelect = el('historyVideoWidth');
+  const historyVideoHeightSelect = el('historyVideoHeight');
+  const historyBgmFile = el('historyBgmFile');
+  const historyTransitionEffectsContainer = el('historyTransitionEffects');
+
+  // 新增：仅生成图片模式相关元素
+  const imageOnlyMode = el('imageOnlyMode');
+  const imageApiKeyInput = el('imageApiKey');
+  const imageInputImage = el('imageInputImage');
+  const imageOrigPreview = el('imageOrigPreview');
+  const imageSlideCountInput = el('imageSlideCount');
+  const imageConcurrentLimitInput = el('imageConcurrentLimit');
+  const imageSelectionArea = el('imageSelectionArea');
+  const imageGallerySelection = el('imageGallerySelection');
+  const composeVideoFpsInput = el('composeVideoFps');
+  const composePerSlideSecondsInput = el('composePerSlideSeconds');
+  const composeTransitionSecondsInput = el('composeTransitionSeconds');
+  const composeVideoWidthSelect = el('composeVideoWidth');
+  const composeVideoHeightSelect = el('composeVideoHeight');
+  const composeTransitionEffectsContainer = el('composeTransitionEffects');
+  const composeIncludeOriginalCheckbox = el('composeIncludeOriginal');
+  const composeBgmFile = el('composeBgmFile');
+
+  // 可用的转场效果列表
+  const availableTransitions = [
+    { value: 'slideleft', label: '左滑' },
+    { value: 'slideright', label: '右滑' },
+    { value: 'slideup', label: '上滑' },
+    { value: 'slidedown', label: '下滑' },
+    { value: 'wipeleft', label: '左擦除' },
+    { value: 'wiperight', label: '右擦除' },
+    { value: 'wipeup', label: '上擦除' },
+    { value: 'wipedown', label: '下擦除' },
+    { value: 'fadeblack', label: '黑色淡入' },
+    { value: 'fadewhite', label: '白色淡入' },
+    { value: 'dissolve', label: '溶解' },
+    { value: 'pixelize', label: '像素化' },
+    { value: 'circlecrop', label: '圆形裁切' },
+    { value: 'rectcrop', label: '矩形裁切' },
+    { value: 'distance', label: '距离' },
+    { value: 'radial', label: '径向' },
+    { value: 'smoothleft', label: '平滑左移' },
+    { value: 'smoothright', label: '平滑右移' },
+    { value: 'smoothup', label: '平滑上移' },
+    { value: 'smoothdown', label: '平滑下移' },
+    { value: 'circleopen', label: '圆形开启' },
+    { value: 'circleclose', label: '圆形关闭' },
+    { value: 'vertopen', label: '垂直开启' },
+    { value: 'vertclose', label: '垂直关闭' },
+    { value: 'horzopen', label: '水平开启' },
+    { value: 'horzclose', label: '水平关闭' },
+    { value: 'diagtl', label: '对角左上' },
+    { value: 'diagtr', label: '对角右上' },
+    { value: 'diagbl', label: '对角左下' },
+    { value: 'diagbr', label: '对角右下' },
+    { value: 'hlslice', label: '水平左切片' },
+    { value: 'hrslice', label: '水平右切片' },
+    { value: 'vuslice', label: '垂直上切片' },
+    { value: 'vdslice', label: '垂直下切片' },
+    { value: 'hblur', label: '水平模糊' },
+    { value: 'fadegrays', label: '灰度淡化' },
+    { value: 'wipetl', label: '左上擦除' },
+    { value: 'wipetr', label: '右上擦除' },
+    { value: 'wipebl', label: '左下擦除' },
+    { value: 'wipebr', label: '右下擦除' },
+    { value: 'squeezeh', label: '水平挤压' },
+    { value: 'squeezev', label: '垂直挤压' },
+    { value: 'zoomin', label: '放大' },
+    { value: 'fadefast', label: '快速淡化' },
+    { value: 'fadeslow', label: '缓慢淡化' },
+    { value: 'hlwind', label: '水平左风' },
+    { value: 'hrwind', label: '水平右风' },
+    { value: 'vuwind', label: '垂直上风' },
+    { value: 'vdwind', label: '垂直下风' },
+    { value: 'coverleft', label: '左覆盖' },
+    { value: 'coverright', label: '右覆盖' },
+    { value: 'coverup', label: '上覆盖' },
+    { value: 'coverdown', label: '下覆盖' },
+    { value: 'revealleft', label: '左揭示' },
+    { value: 'revealright', label: '右揭示' },
+    { value: 'revealup', label: '上揭示' },
+    { value: 'revealdown', label: '下揭示' }
+  ];
+
+  // 全局变量用于处理模态对话框的回调
+  let modalCallback = null;
+
+  // 显示自定义确认对话框（返回Promise）
+  function showCustomConfirm(title, message, confirmText = '确认', cancelText = '取消') {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('customModal');
+      const titleEl = modal.querySelector('.modal-title');
+      const messageEl = modal.querySelector('.modal-message');
+      const confirmBtn = modal.querySelector('.modal-btn-confirm');
+      const cancelBtn = modal.querySelector('.modal-btn-cancel');
+      
+      // 设置内容
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      confirmBtn.textContent = confirmText;
+      cancelBtn.textContent = cancelText;
+      
+      // 重置点击事件（避免之前的事件干扰）
+      confirmBtn.onclick = () => {
+        hideCustomModal();
+        resolve(true);
+      };
+      
+      cancelBtn.onclick = () => {
+        hideCustomModal();
+        resolve(false);
+      };
+      
+      // 显示模态框
+      modal.classList.add('show');
+      
+      // ESC键支持
+      const handleEscape = (event) => {
+        if (event.key === 'Escape') {
+          document.removeEventListener('keydown', handleEscape);
+          hideCustomModal();
+          resolve(false);
+        }
+      };
+      
+      document.addEventListener('keydown', handleEscape);
+      
+      // 点击外部区域关闭
+      const handleOutsideClick = (event) => {
+        if (event.target === modal) {
+          document.removeEventListener('click', handleOutsideClick);
+          hideCustomModal();
+          resolve(false);
+        }
+      };
+      
+      setTimeout(() => {
+        document.addEventListener('click', handleOutsideClick);
+      }, 100); // 延迟添加，避免立即触发
+    });
+  }
+
+  // 隐藏自定义模态对话框
+  function hideCustomModal() {
+    const modal = document.getElementById('customModal');
+    modal.classList.remove('show');
+  }
+
+  // 显示自定义模态对话框
+  function showCustomModal(message, callback) {
+    const modal = document.getElementById('customModal');
+    const messageEl = modal.querySelector('.modal-message');
+    
+    messageEl.textContent = message;
+    modalCallback = callback;
+    
+    modal.classList.add('show');
+    
+    // 监听 ESC 键关闭对话框
+    document.addEventListener('keydown', handleModalEscape);
+  }
+
+  // 隐藏自定义模态对话框
+  function hideCustomModal(confirmed) {
+    const modal = document.getElementById('customModal');
+    modal.classList.remove('show');
+    
+    // 移除 ESC 键监听
+    document.removeEventListener('keydown', handleModalEscape);
+    
+    // 执行回调
+    if (modalCallback) {
+      modalCallback(confirmed);
+      modalCallback = null;
+    }
+  }
+
+  // 处理 ESC 键按下
+  function handleModalEscape(event) {
+    if (event.key === 'Escape') {
+      hideCustomModal(false);
+    }
+  }
+
+  // 将函数添加到全局作用域
+  window.showCustomModal = showCustomModal;
+  window.showCustomConfirm = showCustomConfirm;
+  window.hideCustomModal = hideCustomModal;
+
+  // 状态变量
+  let currentTaskId = null;
+  let pollingInterval = null;
+  let uploadedImageId = null;
+  let uploadedAudioId = null;
+  let currentMode = 'new';  // 当前模式：'new'、'image-only' 或 'history'
+  let selectedHistoryTask = null;  // 选中的历史任务
+  let historyAudioId = null;  // 历史任务模式下的音频ID
+  let imageOnlyTaskId = null;  // 仅生成图片任务ID
+  let imageOnlyUploadedImageId = null;  // 仅生成图片模式下的原图 ID
+  let composeAudioId = null;  // 合成视频时的音频ID
+
+  // 初始化
+  init();
+
+  async function init() {
+    setupEventListeners();
+    initTransitionEffects();
+    initHistoryTransitionEffects();
+    initComposeTransitionEffects();
+    updateButtonText();
+    await checkConnection();
+  }
+
+  function initTransitionEffects() {
+    // 初始化转场效果选择器
+    transitionEffectsContainer.innerHTML = '';
+    
+    // 默认选中的转场效果
+    const defaultSelected = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    
+    availableTransitions.forEach(transition => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'transition-checkbox';
+      
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = `transition_${transition.value}`;
+      checkbox.value = transition.value;
+      checkbox.checked = defaultSelected.includes(transition.value);
+      
+      const label = document.createElement('label');
+      label.htmlFor = checkbox.id;
+      label.textContent = transition.label;
+      
+      wrapper.appendChild(checkbox);
+      wrapper.appendChild(label);
+      transitionEffectsContainer.appendChild(wrapper);
+      
+      // 添加变化事件
+      checkbox.onchange = updateButtonText;
+    });
+  }
+
+  function initHistoryTransitionEffects() {
+    // 初始化历史任务模式下的转场效果选择器
+    historyTransitionEffectsContainer.innerHTML = '';
+    
+    // 默认选中的转场效果
+    const defaultSelected = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    
+    availableTransitions.forEach(transition => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'transition-checkbox';
+      
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = `history_transition_${transition.value}`;
+      checkbox.value = transition.value;
+      checkbox.checked = defaultSelected.includes(transition.value);
+      
+      const label = document.createElement('label');
+      label.htmlFor = checkbox.id;
+      label.textContent = transition.label;
+      
+      wrapper.appendChild(checkbox);
+      wrapper.appendChild(label);
+      historyTransitionEffectsContainer.appendChild(wrapper);
+    });
+  }
+
+  function initComposeTransitionEffects() {
+    // 初始化仅生成图片模式下的转场效果选择器
+    composeTransitionEffectsContainer.innerHTML = '';
+    
+    // 默认选中的转场效果
+    const defaultSelected = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    
+    availableTransitions.forEach(transition => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'transition-checkbox';
+      
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = `compose_transition_${transition.value}`;
+      checkbox.value = transition.value;
+      checkbox.checked = defaultSelected.includes(transition.value);
+      
+      const label = document.createElement('label');
+      label.htmlFor = checkbox.id;
+      label.textContent = transition.label;
+      
+      wrapper.appendChild(checkbox);
+      wrapper.appendChild(label);
+      composeTransitionEffectsContainer.appendChild(wrapper);
+    });
+  }
+
+  function switchMode(mode) {
+    currentMode = mode;
+    
+    // 隐藏所有模式
+    newTaskMode.style.display = 'none';
+    imageOnlyMode.style.display = 'none';
+    historyTaskMode.style.display = 'none';
+    
+    // 移除所有按钮的活跃状态
+    el('newTaskBtn').classList.remove('active');
+    el('imageOnlyBtn').classList.remove('active');
+    el('historyTaskBtn').classList.remove('active');
+    
+    if (mode === 'new') {
+      newTaskMode.style.display = 'block';
+      el('newTaskBtn').classList.add('active');
+      startBtn.textContent = '开始生成并合成视频';
+      // 清空其他模式的显示内容
+      gallery.innerHTML = '';
+      videoSection.style.display = 'none';
+      statsSection.style.display = 'none';
+    } else if (mode === 'image-only') {
+      imageOnlyMode.style.display = 'block';
+      el('imageOnlyBtn').classList.add('active');
+      startBtn.textContent = '开始生成图片';
+      // 清空其他模式的显示内容
+      gallery.innerHTML = '';
+      imageSelectionArea.style.display = 'none';
+      videoSection.style.display = 'none';
+      statsSection.style.display = 'none';
+    } else if (mode === 'history') {
+      historyTaskMode.style.display = 'block';
+      el('historyTaskBtn').classList.add('active');
+      startBtn.textContent = '从历史任务重新生成视频';
+      // 清空图片显示，等待用户选择历史任务
+      gallery.innerHTML = '';
+      videoSection.style.display = 'none';
+      statsSection.style.display = 'none';
+      loadHistoryTasks();
+    }
+    
+    updateButtonText();
+  }
+
+  async function loadHistoryTasks() {
+    try {
+      const response = await fetch(`${API_BASE}/history`);
+      const data = await response.json();
+      
+      historyTasksList.innerHTML = '';
+      
+      if (data.tasks.length === 0) {
+        historyTasksList.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">暂无历史任务</div>';
+        return;
+      }
+      
+      data.tasks.forEach(task => {
+        const taskElement = document.createElement('div');
+        taskElement.className = 'history-task';
+        taskElement.onclick = (e) => {
+          // 避免在点击删除按钮时触发选择
+          if (!e.target.closest('.history-task-delete')) {
+            selectHistoryTask(task);
+          }
+        };
+        
+        const createdDate = new Date(task.created_at).toLocaleString();
+        const completedDate = task.completed_at ? new Date(task.completed_at).toLocaleString() : '未完成';
+        
+        taskElement.innerHTML = `
+          <div class="history-task-title">
+            任务 ${task.task_id.substr(0, 8)}...
+            <button class="history-task-delete" onclick="deleteHistoryTask('${task.task_id}', event)" title="删除任务">
+              ×
+            </button>
+          </div>
+          <div class="history-task-info">
+            创建时间: ${createdDate}<br>
+            完成时间: ${completedDate}<br>
+            图片数量: ${task.image_count} 张<br>
+            分辨率: ${task.config.width || 720}x${task.config.height || 1280}
+          </div>
+        `;
+        
+        historyTasksList.appendChild(taskElement);
+      });
+      
+    } catch (error) {
+      toast(`加载历史任务失败: ${error.message}`, 'err');
+    }
+  }
+
+  function selectHistoryTask(task) {
+    selectedHistoryTask = task;
+    
+    // 更新选中状态
+    document.querySelectorAll('.history-task').forEach(el => el.classList.remove('selected'));
+    event.target.closest('.history-task').classList.add('selected');
+    
+    // 显示配置面板
+    historyTaskConfig.style.display = 'block';
+    
+    // 显示历史任务的图片
+    if (task.images && task.images.length > 0) {
+      gallery.innerHTML = ''; // 清空当前显示的图片
+      updateGallery(task.images);
+      toast(`✅ 已加载 ${task.images.length} 张历史图片`, 'ok');
+    }
+    
+    // 显示历史任务的视频预览（如果有）
+    if (task.video_url) {
+      videoOut.src = task.video_url;
+      dlVideo.href = task.video_url;
+      videoSection.style.display = 'block';
+      showStats(task);
+      toast(`✅ 已加载历史视频预览`, 'ok');
+    } else {
+      // 如果没有视频，隐藏视频区域
+      videoSection.style.display = 'none';
+      statsSection.style.display = 'none';
+    }
+    
+    // 填充默认配置
+    historyVideoFpsInput.value = task.config.fps || 30;
+    historyPerSlideSecondsInput.value = task.config.per_slide_seconds || 3.0;
+    historyTransitionSecondsInput.value = task.config.transition_seconds || 0.6;
+    historyVideoWidthSelect.value = task.config.width || 720;
+    historyVideoHeightSelect.value = task.config.height || 1280;
+    
+    updateButtonText();
+  }
+
+  async function handleHistoryAudioUpload() {
+    const file = historyBgmFile.files?.[0];
+    if (!file) {
+      historyAudioId = null;
+      return;
+    }
+
+    try {
+      toast('📤 正在上传音频...', 'info');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', 'audio');
+
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        historyAudioId = result.file_id;
+        toast('✅ 音频上传成功', 'ok');
+      } else {
+        throw new Error(result.error || '上传失败');
+      }
+    } catch (error) {
+      toast(`❌ 音频上传失败: ${error.message}`, 'err');
+      console.error('Upload error:', error);
+    }
+  }
+
+  // 仅生成图片模式的文件上传处理
+  async function handleImageOnlyImageUpload() {
+    const file = imageInputImage.files?.[0];
+    if (!file) return;
+
+    try {
+      toast('📤 正在上传图片...', 'info');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', 'image');
+
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        imageOnlyUploadedImageId = result.file_id;
+        imageOrigPreview.src = `${API_BASE}/files/${result.file_id}`;
+        imageOrigPreview.style.display = 'block';
+        toast('✅ 图片上传成功', 'ok');
+      } else {
+        throw new Error(result.error || '上传失败');
+      }
+    } catch (error) {
+      toast(`❌ 图片上传失败: ${error.message}`, 'err');
+      console.error('Upload error:', error);
+    }
+  }
+
+  async function handleComposeAudioUpload() {
+    const file = composeBgmFile.files?.[0];
+    if (!file) {
+      composeAudioId = null;
+      return;
+    }
+
+    try {
+      toast('📤 正在上传音频...', 'info');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', 'audio');
+
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        composeAudioId = result.file_id;
+        toast('✅ 音频上传成功', 'ok');
+      } else {
+        throw new Error(result.error || '上传失败');
+      }
+    } catch (error) {
+      toast(`❌ 音频上传失败: ${error.message}`, 'err');
+      console.error('Upload error:', error);
+    }
+  }
+
+  function setupEventListeners() {
+    // 文件上传
+    inputImage.onchange = handleImageUpload;
+    bgmFile.onchange = handleAudioUpload;
+    historyBgmFile.onchange = handleHistoryAudioUpload;
+    
+    // 仅生成图片模式的文件上传
+    imageInputImage.onchange = handleImageOnlyImageUpload;
+    composeBgmFile.onchange = handleComposeAudioUpload;
+    
+    // 配置变化
+    [slideCountInput, videoFpsInput, perSlideSecondsInput, transitionSecondsInput, includeOriginalCheckbox].forEach(input => {
+      input.onchange = updateButtonText;
+      input.oninput = updateButtonText;
+    });
+
+    // 历史任务配置变化
+    [historyVideoFpsInput, historyPerSlideSecondsInput, historyTransitionSecondsInput].forEach(input => {
+      input.onchange = updateButtonText;
+      input.oninput = updateButtonText;
+    });
+
+    // 仅生成图片模式配置变化
+    [imageSlideCountInput, imageConcurrentLimitInput, composeVideoFpsInput, composePerSlideSecondsInput, composeTransitionSecondsInput].forEach(input => {
+      input.onchange = updateButtonText;
+      input.oninput = updateButtonText;
+    });
+
+    // 视频尺寸同步
+    videoWidthSelect.onchange = () => {
+      const width = parseInt(videoWidthSelect.value);
+      if (width === 720) videoHeightSelect.value = '1280';  // 抖音竖屏 9:16
+      else if (width === 1280) videoHeightSelect.value = '720';
+      else if (width === 1920) videoHeightSelect.value = '1080';
+      else if (width === 854) videoHeightSelect.value = '480';
+      updateButtonText();
+    };
+    
+    videoHeightSelect.onchange = () => {
+      const height = parseInt(videoHeightSelect.value);
+      if (height === 1280) videoWidthSelect.value = '720';  // 抖音竖屏 9:16
+      else if (height === 720) videoWidthSelect.value = '1280';
+      else if (height === 1080) videoWidthSelect.value = '1920';
+      else if (height === 480) videoWidthSelect.value = '854';
+      updateButtonText();
+    };
+
+    // 仅生成图片模式视频尺寸同步
+    composeVideoWidthSelect.onchange = () => {
+      const width = parseInt(composeVideoWidthSelect.value);
+      if (width === 720) composeVideoHeightSelect.value = '1280';
+      else if (width === 1280) composeVideoHeightSelect.value = '720';
+      else if (width === 1920) composeVideoHeightSelect.value = '1080';
+      else if (width === 854) composeVideoHeightSelect.value = '480';
+      updateButtonText();
+    };
+
+    composeVideoHeightSelect.onchange = updateButtonText;
+
+    // 启动按钮事件
+    startBtn.onclick = handleGenerate;
+  }
+
+  async function checkConnection() {
+    try {
+      const response = await fetch(`${API_BASE}/health`);
+      if (response.ok) {
+        setConnectionStatus('connected', '后端已连接');
+      } else {
+        setConnectionStatus('error', '后端连接失败');
+      }
+    } catch (error) {
+      setConnectionStatus('error', '无法连接后端');
+      toast('❌ 无法连接到后端服务，请确保后端服务已启动', 'err');
+    }
+  }
+
+  function setConnectionStatus(status, text) {
+    connectionStatus.className = `status-indicator status-${status}`;
+    connectionText.textContent = text;
+  }
+
+  async function handleImageUpload() {
+    const file = inputImage.files?.[0];
+    if (!file) return;
+
+    try {
+      toast('📤 正在上传图片...', 'info');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', 'image');
+
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        uploadedImageId = result.file_id;
+        origPreview.src = `${API_BASE}/files/${result.file_id}`;
+        origPreview.style.display = 'block';
+        dlOrig.href = `${API_BASE}/files/${result.file_id}`;
+        dlOrig.download = result.filename;
+        toast('✅ 图片上传成功', 'ok');
+      } else {
+        throw new Error(result.error || '上传失败');
+      }
+    } catch (error) {
+      toast(`❌ 图片上传失败: ${error.message}`, 'err');
+      console.error('Upload error:', error);
+    }
+  }
+
+  async function handleAudioUpload() {
+    const file = bgmFile.files?.[0];
+    if (!file) return;
+
+    try {
+      toast('📤 正在上传音频...', 'info');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', 'audio');
+
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        uploadedAudioId = result.file_id;
+        toast('✅ 音频上传成功', 'ok');
+      } else {
+        throw new Error(result.error || '上传失败');
+      }
+    } catch (error) {
+      toast(`❌ 音频上传失败: ${error.message}`, 'err');
+      console.error('Upload error:', error);
+    }
+  }
+
+  async function handleGenerate() {
+    if (startBtn.disabled) return;
+    
+    if (currentMode === 'new') {
+      // 新任务模式
+      // 验证输入
+      if (!apiKeyInput.value.trim()) {
+        toast('❌ 请先填写 OpenRouter API Key', 'err');
+        return;
+      }
+
+      if (!uploadedImageId) {
+        toast('❌ 请先上传原图', 'err');
+        return;
+      }
+
+      try {
+        startBtn.disabled = true;
+        taskStatus.style.display = 'block';
+        gallery.innerHTML = ''; // 清空图片廊，为实时显示做准备
+        videoSection.style.display = 'none';
+        statsSection.style.display = 'none';
+        logBox.innerHTML = '';
+
+        // 获取配置
+        const config = getConfig();
+        
+        // 发送生成请求
+        const response = await fetch(`${API_BASE}/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            image_id: uploadedImageId,
+            audio_id: uploadedAudioId,
+            api_key: apiKeyInput.value.trim(),
+            ...config
+          })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          currentTaskId = result.task_id;
+          toast('🚀 视频生成任务已开始', 'ok');
+          startPolling();
+        } else {
+          throw new Error(result.error || '任务创建失败');
+        }
+      } catch (error) {
+        toast(`❌ 生成失败: ${error.message}`, 'err');
+        console.error('Generate error:', error);
+        resetUI();
+      }
+    } else if (currentMode === 'image-only') {
+      // 仅生成图片模式
+      if (imageOnlyTaskId && document.querySelector('#imageSelectionArea[style*="display: block"]')) {
+        // 如果图片已生成，则合成视频
+        handleComposeVideo();
+      } else {
+        // 开始生成图片
+        handleGenerateImagesOnly();
+      }
+    } else {
+      // 历史任务模式
+      if (!selectedHistoryTask) {
+        toast('❌ 请先选择一个历史任务', 'err');
+        return;
+      }
+
+      try {
+        startBtn.disabled = true;
+        taskStatus.style.display = 'block';
+        // 不清空 gallery，保持历史图片显示
+        // gallery.innerHTML = '';
+        videoSection.style.display = 'none';
+        statsSection.style.display = 'none';
+        logBox.innerHTML = '';
+
+        // 历史图片已经在 selectHistoryTask 中显示了，不需要重复显示
+        // if (selectedHistoryTask.images) {
+        //   updateGallery(selectedHistoryTask.images);
+        // }
+
+        // 获取历史任务配置
+        const config = getHistoryConfig();
+        
+        // 发送重新生成请求
+        const response = await fetch(`${API_BASE}/regenerate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            task_id: selectedHistoryTask.task_id,
+            audio_id: historyAudioId,
+            ...config
+          })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          currentTaskId = result.task_id;
+          toast('🚀 视频重新生成任务已开始', 'ok');
+          startPolling();
+        } else {
+          throw new Error(result.error || '任务创建失败');
+        }
+      } catch (error) {
+        toast(`❌ 重新生成失败: ${error.message}`, 'err');
+        console.error('Regenerate error:', error);
+        resetUI();
+      }
+    }
+  }
+
+  function getConfig() {
+    // 获取选中的转场效果
+    const selectedTransitions = [];
+    const checkboxes = transitionEffectsContainer.querySelectorAll('input[type="checkbox"]:checked');
+    checkboxes.forEach(checkbox => {
+      selectedTransitions.push(checkbox.value);
+    });
+    
+    return {
+      slide_count: parseInt(slideCountInput.value) || 2,
+      fps: parseInt(videoFpsInput.value) || 30,
+      per_slide_seconds: parseFloat(perSlideSecondsInput.value) || 1.0,
+      transition_seconds: parseFloat(transitionSecondsInput.value) || 0.6,
+      transition_effects: selectedTransitions,
+      width: parseInt(videoWidthSelect.value) || 720,
+      height: parseInt(videoHeightSelect.value) || 1280,
+      include_original: includeOriginalCheckbox.checked,
+      concurrent_limit: parseInt(concurrentLimitInput.value) || 1
+    };
+  }
+
+  function getHistoryConfig() {
+    // 获取历史任务模式下的配置
+    const selectedTransitions = [];
+    const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]:checked');
+    checkboxes.forEach(checkbox => {
+      selectedTransitions.push(checkbox.value);
+    });
+    
+    return {
+      fps: parseInt(historyVideoFpsInput.value) || 30,
+      per_slide_seconds: parseFloat(historyPerSlideSecondsInput.value) || 3.0,
+      transition_seconds: parseFloat(historyTransitionSecondsInput.value) || 0.6,
+      transition_effects: selectedTransitions,
+      width: parseInt(historyVideoWidthSelect.value) || 720,
+      height: parseInt(historyVideoHeightSelect.value) || 1280
+    };
+  }
+
+  function updateButtonText() {
+    if (currentMode === 'new') {
+      const config = getConfig();
+      const totalSeconds = config.include_original ? 
+        (config.slide_count + 1) * config.per_slide_seconds : 
+        config.slide_count * config.per_slide_seconds;
+      const resolution = `${config.width}x${config.height}`;
+      
+      startBtn.textContent = `开始生成（${config.slide_count}张）并合成 ${totalSeconds.toFixed(1)}秒视频 (${resolution})`;
+    } else if (currentMode === 'image-only') {
+      if (imageSelectionArea.style.display === 'block') {
+        // 图片已生成，显示合成视频按钮
+        const selectedCount = getSelectedImages().length;
+        const config = getComposeConfig();
+        const totalSeconds = config.include_original ? 
+          (selectedCount + 1) * config.per_slide_seconds : 
+          selectedCount * config.per_slide_seconds;
+        const resolution = `${config.width}x${config.height}`;
+        
+        startBtn.textContent = `合成视频（${selectedCount}张）${totalSeconds.toFixed(1)}秒 (${resolution})`;
+      } else {
+        // 尚未生成图片
+        const slideCount = parseInt(imageSlideCountInput.value) || 2;
+        startBtn.textContent = `开始生成 ${slideCount} 张风格图片`;
+      }
+    } else if (currentMode === 'history') {
+      startBtn.textContent = '从历史任务重新生成视频';
+    }
+  }
+
+  function startPolling() {
+    if (pollingInterval) clearInterval(pollingInterval);
+    
+    pollingInterval = setInterval(async () => {
+      if (!currentTaskId) return;
+      
+      try {
+        const response = await fetch(`${API_BASE}/tasks/${currentTaskId}`);
+        const task = await response.json();
+        
+        updateTaskStatus(task);
+        
+        if (task.status === 'completed' || task.status === 'images_ready') {
+          stopPolling();
+          handleTaskCompleted(task);
+        } else if (task.status === 'error') {
+          stopPolling();
+          handleTaskError(task);
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 1000); // 每1秒轮询一次，更及时地显示新生成的图片
+  }
+
+  function stopPolling() {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+  }
+
+  function updateTaskStatus(task) {
+    taskMessage.textContent = task.message || '处理中...';
+    taskProgress.textContent = `${Math.round(task.progress || 0)}%`;
+    prog.value = task.progress || 0;
+    
+    // 显示生成的图片
+    if (task.images && task.images.length > 0) {
+      updateGallery(task.images);
+      
+      // 如果是仅生成图片模式且状态为 images_ready，显示选择界面
+      if (currentMode === 'image-only' && task.status === 'images_ready') {
+        updateImageSelectionArea(task.images);
+        imageSelectionArea.style.display = 'block';
+        startBtn.textContent = '合成视频';
+        startBtn.disabled = false;
+      }
+    }
+  }
+
+  function updateImageSelectionArea(images) {
+    imageGallerySelection.innerHTML = '';
+    
+    images.forEach((img, index) => {
+      if (img) {
+        const wrap = document.createElement('div');
+        wrap.className = 'thumb';
+        wrap.style.position = 'relative';
+        
+        const imgEl = document.createElement('img');
+        imgEl.src = `${API_BASE}/files/${img.file_id}`;
+        imgEl.alt = img.style;
+        imgEl.loading = 'lazy';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = img.file_id;
+        checkbox.checked = img.selected !== false; // 默认选中
+        checkbox.style.position = 'absolute';
+        checkbox.style.top = '8px';
+        checkbox.style.left = '8px';
+        checkbox.style.width = 'auto';
+        checkbox.style.zIndex = '10';
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '×';
+        deleteBtn.style.position = 'absolute';
+        deleteBtn.style.top = '8px';
+        deleteBtn.style.right = '8px';
+        deleteBtn.style.width = '24px';
+        deleteBtn.style.height = '24px';
+        deleteBtn.style.padding = '0';
+        deleteBtn.style.fontSize = '16px';
+        deleteBtn.style.fontWeight = 'bold';
+        deleteBtn.style.color = 'white';
+        deleteBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.8)';
+        deleteBtn.style.border = 'none';
+        deleteBtn.style.borderRadius = '50%';
+        deleteBtn.style.cursor = 'pointer';
+        deleteBtn.style.zIndex = '10';
+        deleteBtn.onclick = () => deleteSelectedImage(img.file_id);
+        
+        const info = document.createElement('div');
+        info.className = 'info';
+        info.innerHTML = `
+          <div>${img.style}</div>
+          <a href="${API_BASE}/files/${img.file_id}" download="style_${img.index}.png" style="color:var(--accent)">下载</a>
+        `;
+        
+        wrap.appendChild(imgEl);
+        wrap.appendChild(checkbox);
+        wrap.appendChild(deleteBtn);
+        wrap.appendChild(info);
+        imageGallerySelection.appendChild(wrap);
+      }
+    });
+  }
+
+  function updateGallery(images) {
+    // 获取当前已展示的图片数量
+    const currentImageCount = gallery.children.length;
+    
+    // 只添加新的图片，避免重复渲染
+    for (let i = currentImageCount; i < images.length; i++) {
+      const img = images[i];
+      if (img) {
+        const wrap = document.createElement('div');
+        wrap.className = 'thumb';
+        wrap.style.position = 'relative'; // 设置相对定位以便添加删除按钮
+        
+        const imgEl = document.createElement('img');
+        imgEl.src = `${API_BASE}/files/${img.file_id}`;
+        imgEl.alt = img.style;
+        imgEl.loading = 'lazy';
+        
+        // 添加加载动画效果
+        imgEl.style.opacity = '0';
+        imgEl.style.transition = 'opacity 0.3s ease-in-out';
+        imgEl.onload = () => {
+          imgEl.style.opacity = '1';
+        };
+        
+        // 添加删除按钮
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '×';
+        deleteBtn.style.position = 'absolute';
+        deleteBtn.style.top = '8px';
+        deleteBtn.style.right = '8px';
+        deleteBtn.style.width = '24px';
+        deleteBtn.style.height = '24px';
+        deleteBtn.style.padding = '0';
+        deleteBtn.style.fontSize = '16px';
+        deleteBtn.style.fontWeight = 'bold';
+        deleteBtn.style.color = 'white';
+        deleteBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.8)';
+        deleteBtn.style.border = 'none';
+        deleteBtn.style.borderRadius = '50%';
+        deleteBtn.style.cursor = 'pointer';
+        deleteBtn.style.zIndex = '10';
+        deleteBtn.style.opacity = '0.8';
+        deleteBtn.style.transition = 'opacity 0.2s';
+        deleteBtn.title = '删除这张图片';
+        
+        // 鼠标悬停效果
+        deleteBtn.onmouseover = () => deleteBtn.style.opacity = '1';
+        deleteBtn.onmouseout = () => deleteBtn.style.opacity = '0.8';
+        
+        // 删除事件
+        deleteBtn.onclick = (e) => {
+          e.stopPropagation(); // 阻止事件冒泡
+          deleteGalleryImage(img.file_id, wrap);
+        };
+        
+        const info = document.createElement('div');
+        info.className = 'info';
+        info.innerHTML = `
+          <div>${img.style}</div>
+          <a href="${API_BASE}/files/${img.file_id}" download="style_${img.index}.png" style="color:var(--accent)">下载</a>
+        `;
+        
+        wrap.appendChild(imgEl);
+        wrap.appendChild(deleteBtn);
+        wrap.appendChild(info);
+        gallery.appendChild(wrap);
+        
+        // 添加入场动画
+        wrap.style.opacity = '0';
+        wrap.style.transform = 'scale(0.9)';
+        wrap.style.transition = 'all 0.3s ease-in-out';
+        
+        // 延迟执行动画
+        setTimeout(() => {
+          wrap.style.opacity = '1';
+          wrap.style.transform = 'scale(1)';
+        }, 50);
+        
+        // 显示新图片生成的提示
+        toast(`✨ 新风格图片生成: ${img.style}`, 'ok');
+      }
+    }
+  }
+
+  function handleTaskCompleted(task) {
+    if (task.status === 'images_ready') {
+      // 图片生成完成，等待用户选择
+      toast('✅ 图片生成完成！请选择要包含的图片后点击“合成视频”', 'ok');
+      return; // 不重置UI，等待用户操作
+    }
+    
+    toast('✅ 视频生成完成！', 'ok');
+    
+    // 显示视频
+    if (task.video_url) {
+      videoOut.src = task.video_url;
+      dlVideo.href = task.video_url;
+      videoSection.style.display = 'block';
+    }
+    
+    // 显示统计信息
+    showStats(task);
+    
+    resetUI();
+  }
+
+  function handleTaskError(task) {
+    let errorMessage = task.error || '未知错误';
+    
+    // 对不同类型的错误提供更好的提示
+    if (errorMessage.includes('速率限制')) {
+      toast(`⚠️ API调用过于频繁，请稍后再试或减少并发数量`, 'warn');
+      errorMessage = 'API速率限制，请稍后再试或在高级配置中减少“并发请求数”';
+    } else if (errorMessage.includes('图片生成完成，成功: 0')) {
+      toast(`⚠️ 所有图片生成失败，请检查API Key或稍后再试`, 'warn');
+      errorMessage = '所有图片生成失败，请检查OpenRouter API Key是否有效';
+    }
+    
+    toast(`❌ 生成失败: ${errorMessage}`, 'err');
+    resetUI();
+  }
+
+  function showStats(task) {
+    const stats = el('stats');
+    const config = task.config || {};
+    const imageCount = task.images ? task.images.length : 0;
+    
+    stats.innerHTML = `
+      成功生成: ${imageCount}/${config.slide_count || 0} 张图片<br>
+      视频分辨率: ${config.width || 0}×${config.height || 0}<br>
+      视频帧率: ${config.fps || 0} FPS<br>
+      完成时间: ${new Date(task.completed_at).toLocaleString()}
+    `;
+    
+    statsSection.style.display = 'block';
+  }
+
+  function resetUI() {
+    startBtn.disabled = false;
+    currentTaskId = null;
+  }
+
+  function toast(msg, type) {
+    const line = document.createElement('div');
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    if (type === 'ok') line.classList.add('ok');
+    else if (type === 'warn') line.classList.add('warn');
+    else if (type === 'err') line.classList.add('err');
+    
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  // 页面卸载时清理
+  window.addEventListener('beforeunload', () => {
+    stopPolling();
+  });
+
+  // 转场效果选择快捷函数
+  function selectAllTransitions() {
+    const checkboxes = transitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = true;
+    });
+    updateButtonText();
+  }
+
+  function selectNoneTransitions() {
+    const checkboxes = transitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+    });
+    updateButtonText();
+  }
+
+  function selectSlideTransitions() {
+    const checkboxes = transitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    const slideEffects = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = slideEffects.includes(checkbox.value);
+    });
+    updateButtonText();
+  }
+
+  function selectFadeTransitions() {
+    const checkboxes = transitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    const fadeEffects = ['fadeblack', 'fadewhite', 'dissolve', 'fadefast', 'fadeslow', 'fadegrays'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = fadeEffects.includes(checkbox.value);
+    });
+    updateButtonText();
+  }
+
+  // 将函数添加到全局作用域，以便 onclick 可以访问
+  window.selectAllTransitions = selectAllTransitions;
+  window.selectNoneTransitions = selectNoneTransitions;
+  window.selectSlideTransitions = selectSlideTransitions;
+  window.selectFadeTransitions = selectFadeTransitions;
+  window.switchMode = switchMode;
+  window.loadHistoryTasks = loadHistoryTasks;
+
+  // 仅生成图片模式的相关函数
+  async function handleGenerateImagesOnly() {
+    // 验证输入
+    if (!imageApiKeyInput.value.trim()) {
+      toast('❌ 请先填写 OpenRouter API Key', 'err');
+      return;
+    }
+
+    if (!imageOnlyUploadedImageId) {
+      toast('❌ 请先上传原图', 'err');
+      return;
+    }
+
+    try {
+      startBtn.disabled = true;
+      taskStatus.style.display = 'block';
+      gallery.innerHTML = '';
+      imageGallerySelection.innerHTML = '';
+      imageSelectionArea.style.display = 'none';
+      videoSection.style.display = 'none';
+      statsSection.style.display = 'none';
+      logBox.innerHTML = '';
+
+      // 获取配置
+      const config = {
+        slide_count: parseInt(imageSlideCountInput.value) || 2,
+        concurrent_limit: parseInt(imageConcurrentLimitInput.value) || 1
+      };
+      
+      // 发送生成图片请求
+      const response = await fetch(`${API_BASE}/generate-images`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          image_id: imageOnlyUploadedImageId,
+          api_key: imageApiKeyInput.value.trim(),
+          ...config
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        imageOnlyTaskId = result.task_id;
+        currentTaskId = result.task_id;
+        toast('🚀 图片生成任务已开始', 'ok');
+        startPolling();
+      } else {
+        throw new Error(result.error || '任务创建失败');
+      }
+    } catch (error) {
+      toast(`❌ 生成失败: ${error.message}`, 'err');
+      console.error('Generate error:', error);
+      resetUI();
+    }
+  }
+
+  async function handleComposeVideo() {
+    // 获取选中的图片
+    const selectedImages = getSelectedImages();
+    
+    if (selectedImages.length === 0) {
+      toast('❌ 请至少选择一张图片', 'err');
+      return;
+    }
+
+    try {
+      startBtn.disabled = true;
+      taskStatus.style.display = 'block';
+      videoSection.style.display = 'none';
+      statsSection.style.display = 'none';
+      logBox.innerHTML = '';
+
+      // 获取配置
+      const config = getComposeConfig();
+      
+      // 发送合成视频请求
+      const response = await fetch(`${API_BASE}/compose-video`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          task_id: imageOnlyTaskId,
+          selected_image_ids: selectedImages,
+          audio_id: composeAudioId,
+          ...config
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        currentTaskId = result.task_id;
+        toast('🚀 视频合成任务已开始', 'ok');
+        startPolling();
+      } else {
+        throw new Error(result.error || '任务创建失败');
+      }
+    } catch (error) {
+      toast(`❌ 合成失败: ${error.message}`, 'err');
+      console.error('Compose error:', error);
+      resetUI();
+    }
+  }
+
+  function getSelectedImages() {
+    const selectedImages = [];
+    const checkboxes = imageGallerySelection.querySelectorAll('input[type="checkbox"]:checked');
+    checkboxes.forEach(checkbox => {
+      selectedImages.push(checkbox.value);
+    });
+    return selectedImages;
+  }
+
+  function getComposeConfig() {
+    // 获取选中的转场效果
+    const selectedTransitions = [];
+    const checkboxes = composeTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]:checked');
+    checkboxes.forEach(checkbox => {
+      selectedTransitions.push(checkbox.value);
+    });
+    
+    return {
+      fps: parseInt(composeVideoFpsInput.value) || 30,
+      per_slide_seconds: parseFloat(composePerSlideSecondsInput.value) || 3.0,
+      transition_seconds: parseFloat(composeTransitionSecondsInput.value) || 0.6,
+      transition_effects: selectedTransitions,
+      width: parseInt(composeVideoWidthSelect.value) || 720,
+      height: parseInt(composeVideoHeightSelect.value) || 1280,
+      include_original: composeIncludeOriginalCheckbox.checked
+    };
+  }
+
+  function selectAllImages() {
+    const checkboxes = imageGallerySelection.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = true;
+    });
+  }
+
+  function selectNoneImages() {
+    const checkboxes = imageGallerySelection.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+    });
+  }
+
+  async function deleteSelectedImage(imageId) {
+    showCustomModal('确定要删除这张图片吗？', async (confirmed) => {
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/images/${imageId}`, {
+          method: 'DELETE'
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          // 从界面中移除图片
+          const imageElement = document.querySelector(`input[value="${imageId}"]`).closest('.thumb');
+          if (imageElement) {
+            imageElement.remove();
+          }
+          toast('✅ 图片删除成功', 'ok');
+        } else {
+          throw new Error(result.error || '删除失败');
+        }
+      } catch (error) {
+        toast(`❌ 删除图片失败: ${error.message}`, 'err');
+        console.error('Delete error:', error);
+      }
+    });
+  }
+
+  async function deleteGalleryImage(imageId, imageElement) {
+    showCustomModal('确定要删除这张图片吗？删除后将无法恢复。', async (confirmed) => {
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        // 添加删除动画
+        imageElement.style.transition = 'all 0.3s ease-in-out';
+        imageElement.style.opacity = '0.5';
+        imageElement.style.transform = 'scale(0.9)';
+        
+        const response = await fetch(`${API_BASE}/images/${imageId}`, {
+          method: 'DELETE'
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          // 添加退场动画后移除元素
+          imageElement.style.opacity = '0';
+          imageElement.style.transform = 'scale(0.8)';
+          
+          setTimeout(() => {
+            if (imageElement.parentNode) {
+              imageElement.remove();
+            }
+          }, 300);
+          
+          toast('✅ 图片删除成功', 'ok');
+        } else {
+          // 恢复原状
+          imageElement.style.opacity = '1';
+          imageElement.style.transform = 'scale(1)';
+          throw new Error(result.error || '删除失败');
+        }
+      } catch (error) {
+        // 恢复原状
+        imageElement.style.opacity = '1';
+        imageElement.style.transform = 'scale(1)';
+        toast(`❌ 删除图片失败: ${error.message}`, 'err');
+        console.error('Delete error:', error);
+      }
+    });
+  }
+
+  // 仅生成图片模式转场效果选择函数
+  function selectAllComposeTransitions() {
+    const checkboxes = composeTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = true;
+    });
+  }
+
+  function selectNoneComposeTransitions() {
+    const checkboxes = composeTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+    });
+  }
+
+  function selectSlideComposeTransitions() {
+    const checkboxes = composeTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    const slideEffects = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = slideEffects.includes(checkbox.value);
+    });
+  }
+
+  function selectFadeComposeTransitions() {
+    const checkboxes = composeTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    const fadeEffects = ['fadeblack', 'fadewhite', 'dissolve', 'fadefast', 'fadeslow', 'fadegrays'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = fadeEffects.includes(checkbox.value);
+    });
+  }
+
+  // 删除历史任务功能
+  async function deleteHistoryTask(taskId, event) {
+    event.stopPropagation(); // 阻止事件冒泡
+    
+    // 显示自定义确认对话框
+    const confirmed = await showCustomConfirm(
+      '删除历史任务',
+      `确定要删除这个历史任务吗？\n\n这将删除：\n• 任务记录\n• 相关的所有图片文件\n• 相关的视频文件\n\n此操作不可恢复！`,
+      '删除',
+      '取消'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+    
+    try {
+      // 显示加载状态
+      toast('🗑️ 正在删除历史任务...', 'info');
+      
+      const response = await fetch(`${API_BASE}/history/${taskId}`, {
+        method: 'DELETE'
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast(`✅ 历史任务删除成功，共删除 ${result.deleted_files.length} 个文件`, 'ok');
+        
+        // 如果删除的是当前选中的任务，清空选中状态
+        if (selectedHistoryTask && selectedHistoryTask.task_id === taskId) {
+          selectedHistoryTask = null;
+          gallery.innerHTML = '';
+          videoSection.style.display = 'none';
+          statsSection.style.display = 'none';
+          historyTaskConfig.style.display = 'none';
+        }
+        
+        // 重新加载历史任务列表
+        await loadHistoryTasks();
+        
+      } else {
+        throw new Error(result.error || '删除失败');
+      }
+      
+    } catch (error) {
+      console.error('Delete history task error:', error);
+      toast(`❌ 删除失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 将删除函数添加到全局作用域
+  window.deleteHistoryTask = deleteHistoryTask;
+
+  // 将新函数添加到全局作用域
+  window.selectAllImages = selectAllImages;
+  window.selectNoneImages = selectNoneImages;
+  window.deleteSelectedImage = deleteSelectedImage;
+  window.deleteGalleryImage = deleteGalleryImage;
+  window.selectAllComposeTransitions = selectAllComposeTransitions;
+  window.selectNoneComposeTransitions = selectNoneComposeTransitions;
+  window.selectSlideComposeTransitions = selectSlideComposeTransitions;
+  window.selectFadeComposeTransitions = selectFadeComposeTransitions;
+
+  // 历史任务转场效果选择函数
+  function selectAllHistoryTransitions() {
+    const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = true;
+    });
+  }
+
+  function selectNoneHistoryTransitions() {
+    const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+    });
+  }
+
+  function selectSlideHistoryTransitions() {
+    const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    const slideEffects = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = slideEffects.includes(checkbox.value);
+    });
+  }
+
+  function selectFadeHistoryTransitions() {
+    const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    const fadeEffects = ['fadeblack', 'fadewhite', 'dissolve', 'fadefast', 'fadeslow', 'fadegrays'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = fadeEffects.includes(checkbox.value);
+    });
+  }
+
+  window.selectAllHistoryTransitions = selectAllHistoryTransitions;
+  window.selectNoneHistoryTransitions = selectNoneHistoryTransitions;
+  window.selectSlideHistoryTransitions = selectSlideHistoryTransitions;
+  window.selectFadeHistoryTransitions = selectFadeHistoryTransitions;
+})();
+</script>
+</body>
+</html>
