@@ -1000,7 +1000,7 @@
         taskElement.onclick = (e) => {
           // 避免在点击删除按钮时触发选择
           if (!e.target.closest('.history-task-delete')) {
-            selectHistoryTask(task);
+            selectHistoryTask(task, e);
           }
         };
         
@@ -1018,7 +1018,7 @@
             创建时间: ${createdDate}<br>
             完成时间: ${completedDate}<br>
             图片数量: ${task.image_count} 张<br>
-            分辨率: ${task.config.width || 720}x${task.config.height || 1280}
+            分辨率: ${task.config ? (task.config.width || 720) : 720}x${task.config ? (task.config.height || 1280) : 1280}
           </div>
         `;
         
@@ -1030,12 +1030,16 @@
     }
   }
 
-  function selectHistoryTask(task) {
+  function selectHistoryTask(task, eventParam) {
     selectedHistoryTask = task;
     
     // 更新选中状态
     document.querySelectorAll('.history-task').forEach(el => el.classList.remove('selected'));
-    event.target.closest('.history-task').classList.add('selected');
+    // 使用传入的事件参数或尝试获取当前事件
+    const event = eventParam || window.event;
+    if (event && event.target) {
+      event.target.closest('.history-task').classList.add('selected');
+    }
     
     // 显示配置面板
     historyTaskConfig.style.display = 'block';

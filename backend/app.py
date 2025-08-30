@@ -645,6 +645,7 @@ async def compose_gallery_video(request: GalleryComposeVideoRequest, background_
             'message': '任务已创建，等待处理...',
             'progress': 0,
             'images': [],
+            'config': request.dict(),
             'created_at': datetime.now().isoformat()
         }
         
@@ -704,11 +705,34 @@ async def compose_gallery_video_async(task_id: str, selected_image_ids: List[str
         # 保存视频并获取URL
         video_info = file_manager.save_video_file(video_path)
         
-        # 完成任务
+        # 完成任务 - 添加images字段，确保历史任务包含图片信息
+        # 将选中的图片ID转换为图片信息列表
+        images = []
+        for image_id in selected_image_ids:
+            try:
+                # 获取图片文件路径
+                file_path = file_manager.get_file_path(image_id)
+                if file_path and os.path.exists(file_path):
+                    # 获取文件基本信息
+                    file_stat = os.stat(file_path)
+                    # 尝试从文件名中提取原始名称信息
+                    filename = os.path.basename(file_path)
+                    # 创建图片信息字典
+                    images.append({
+                        'file_id': image_id,
+                        'url': f'/api/files/{image_id}',
+                        'name': f'gallery_{image_id}',
+                        'size': file_stat.st_size,
+                        'created_at': datetime.fromtimestamp(file_stat.st_ctime).isoformat()
+                    })
+            except Exception as e:
+                logger.warning(f"获取图片信息失败 (image_id: {image_id}): {str(e)}")
+                
         completed_task = {
             'status': 'completed',
             'progress': 100,
             'message': '视频合成完成',
+            'images': images,
             'video_url': f'/api/files/{video_info["file_id"]}',
             'video_id': video_info['file_id'],
             'completed_at': datetime.now().isoformat()
