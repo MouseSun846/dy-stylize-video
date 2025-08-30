@@ -297,8 +297,11 @@ async def upload_file(file: UploadFile = File(...), type: str = Form(...)):
         if not file_manager.is_valid_file(file.filename, type):
             raise HTTPException(status_code=400, detail=f"不支持的文件格式: {file.filename}")
         
+        # 异步读取文件内容
+        content = await file.read()
+        
         # 保存文件
-        file_info = file_manager.save_uploaded_file(file, type)
+        file_info = file_manager.save_uploaded_file(content, type, file.filename)
         
         return UploadResponse(
             success=True,

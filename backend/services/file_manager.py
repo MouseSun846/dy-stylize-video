@@ -130,13 +130,14 @@ class FileManager:
             self.logger.error(f"文件保存失败: {str(e)}")
             raise
 
-    def save_uploaded_file(self, file, file_type: str) -> Dict:
+    def save_uploaded_file(self, content: bytes, file_type: str, filename: str) -> Dict:
         """
         保存上传的文件
         
         Args:
-            file: FastAPI的UploadFile对象或类似的文件对象
+            content: 文件内容的字节数据
             file_type: 文件类型 ('image', 'audio', 'video')
+            filename: 原始文件名
             
         Returns:
             文件信息字典
@@ -146,7 +147,7 @@ class FileManager:
             file_id = str(uuid.uuid4())
             
             # 获取原始文件名和扩展名
-            original_filename = getattr(file, 'filename', 'unknown')
+            original_filename = filename
             ext = original_filename.rsplit('.', 1)[-1].lower() if '.' in original_filename else ''
             
             # 生成安全的文件名
@@ -154,19 +155,6 @@ class FileManager:
             
             # 确定保存路径
             save_path = self.uploads_path / safe_filename
-            
-            # 读取文件内容并保存
-            if hasattr(file, 'read'):
-                # 处理类似文件的对象
-                content = file.read()
-                if hasattr(file, 'seek'):
-                    file.seek(0)  # 重置文件指针
-            elif hasattr(file, 'file'):
-                # 处理FastAPI UploadFile
-                content = file.file.read()
-                file.file.seek(0)  # 重置文件指针
-            else:
-                raise Exception("不支持的文件对象类型")
             
             # 保存文件
             with open(save_path, 'wb') as f:

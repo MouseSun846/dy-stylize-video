@@ -800,6 +800,7 @@
   let imageOnlyUploadedImageId = null;  // 仅生成图片模式下的原图 ID
   let composeAudioId = null;  // 合成视频时的音频ID
   let currentGalleryGroup = null;  // 当前选中的图库分组
+  let galleryAudioId = null;  // 图库模式下的音频ID
 
   // 初始化
   init();
@@ -1177,6 +1178,7 @@
     
     // 图库文件上传
     el('galleryImageUpload').onchange = handleGalleryImageUpload;
+    el('galleryBgmFile').onchange = handleGalleryAudioUpload;
     
     // 仅生成图片模式的文件上传
     imageInputImage.onchange = handleImageOnlyImageUpload;
@@ -1322,6 +1324,41 @@
     }
   }
 
+  async function handleGalleryAudioUpload() {
+    const file = el('galleryBgmFile').files?.[0];
+    if (!file) return;
+
+    if (!currentGalleryGroup) {
+      toast('请先选择一个分组', 'warn');
+      return;
+    }
+
+    try {
+      toast('📤 正在上传背景音乐...', 'info');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', 'audio');
+
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        galleryAudioId = result.file_id;
+        toast('✅ 背景音乐上传成功', 'ok');
+      } else {
+        throw new Error(result.error || '上传失败');
+      }
+    } catch (error) {
+      toast(`❌ 背景音乐上传失败: ${error.message}`, 'err');
+      console.error('Gallery audio upload error:', error);
+    }
+  }
+
   async function handleGenerate() {
     if (startBtn.disabled) return;
     
@@ -1385,6 +1422,62 @@
       } else {
         // 开始生成图片
         handleGenerateImagesOnly();
+      }
+    } else if (currentMode === 'gallery') {
+      // 图库模式
+      if (!currentGalleryGroup) {
+        toast('❌ 请先选择一个图库分组', 'err');
+        return;
+      }
+
+      // 获取选中的图片
+      const selectedCheckboxes = el('galleryImagesGrid').querySelectorAll('.gallery-item-checkbox:checked');
+      const selectedCount = selectedCheckboxes.length;
+      
+      if (selectedCount === 0) {
+        toast('❌ 请先选择要使用的图片', 'err');
+        return;
+      }
+
+      try {
+        startBtn.disabled = true;
+        taskStatus.style.display = 'block';
+        videoSection.style.display = 'none';
+        statsSection.style.display = 'none';
+        logBox.innerHTML = '';
+
+        // 获取选中的图片ID
+        const imageIds = Array.from(selectedCheckboxes).map(cb => cb.closest('.gallery-item').dataset.imageId);
+        
+        // 获取图库配置
+        const config = getGalleryConfig();
+        
+        // 发送生成请求
+        const response = await fetch(`${API_BASE}/gallery/compose-video`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            selected_image_ids: imageIds,
+            audio_id: galleryAudioId,
+            ...config
+          })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          currentTaskId = result.task_id;
+          toast('🚀 从图库生成视频任务已开始', 'ok');
+          startPolling();
+        } else {
+          throw new Error(result.error || '任务创建失败');
+        }
+      } catch (error) {
+        toast(`❌ 生成失败: ${error.message}`, 'err');
+        console.error('Generate from gallery error:', error);
+        resetUI();
       }
     } else {
       // 历史任务模式
