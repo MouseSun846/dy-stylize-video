@@ -28,6 +28,7 @@ class FileManager:
         self.videos_path = self.storage_path / 'videos'
         self.temp_path = self.storage_path / 'temp'
         self.logs_path = self.storage_path / 'logs'
+        self.gallery_path = self.storage_path / 'gallery'  # 图库目录
         
         self.logger = setup_logger('FileManager')
         
@@ -51,7 +52,8 @@ class FileManager:
             self.generated_path,
             self.videos_path,
             self.temp_path,
-            self.logs_path
+            self.logs_path,
+            self.gallery_path  # 确保图库目录存在
         ]
         
         for directory in directories:
@@ -199,6 +201,98 @@ class FileManager:
         except Exception as e:
             self.logger.error(f"文件保存失败: {str(e)}")
             raise
+    
+    def save_gallery_image(self, file, group_id: str) -> Dict:
+        """
+        保存图库图片到指定分组目录
+        
+        Args:
+            file: FastAPI的UploadFile对象
+            group_id: 图库分组ID
+            
+        Returns:
+            文件信息字典
+        """
+        try:
+            # 生成唯一文件ID
+            file_id = str(uuid.uuid4())
+            
+            # 获取原始文件名和扩展名
+            original_filename = getattr(file, 'filename', 'unknown')
+            ext = original_filename.rsplit('.', 1)[-1].lower() if '.' in original_filename else ''
+            
+            # 生成安全的文件名
+            safe_filename = f"{file_id}.{ext}"
+            
+            # 创建分组目录
+            group_path = self.gallery_path / group_id
+            group_path.mkdir(parents=True, exist_ok=True)
+            
+            # 确定保存路径
+            save_path = group_path / safe_filename
+            
+            # 读取文件内容并保存
+            content = file.file.read()
+            file.file.seek(0)  # 重置文件指针
+            
+            # 保存文件
+            with open(save_path, 'wb') as f:
+                f.write(content)
+            
+            # 获取文件信息
+            file_size = len(content)
+            
+            # 验证并获取图片信息
+            image_info = self._validate_and_get_image_info(save_path)
+            if not image_info:
+                save_path.unlink()  # 删除无效文件
+                raise Exception("无效的图片文件")
+            
+            # 记录文件映射
+            self.file_mapping[file_id] = str(save_path)
+            
+            file_info = {
+                'file_id': file_id,
+                'filename': original_filename,
+                'safe_filename': safe_filename,
+                'size': file_size,
+                'type': 'image',
+                'path': str(save_path),
+                'width': image_info['width'],
+                'height': image_info['height'],
+                'created_at': time.time()
+            }
+            
+            self.logger.info(f"图库图片保存成功: {file_id} -> {save_path}")
+            return file_info
+            
+        except Exception as e:
+            self.logger.error(f"图库图片保存失败: {str(e)}")
+            raise
+    
+    def _validate_and_get_image_info(self, image_path: Path) -> Optional[Dict]:
+        """
+        验证图片文件并获取信息
+        
+        Args:
+            image_path: 图片文件路径
+            
+        Returns:
+            图片信息字典或None（如果无效）
+        """
+        try:
+            with Image.open(image_path) as img:
+                width, height = img.size
+                format = img.format
+                
+            return {
+                'width': width,
+                'height': height,
+                'format': format
+            }
+        except Exception as e:
+            self.logger.error(f"图片验证失败 {image_path}: {str(e)}")
+            return None
     
     def save_generated_image(self, image_data: Dict, prefix: str = "generated") -> Dict:
         """
@@ -352,6 +446,14 @@ class FileManager:
                 self.logger.info(f"在videos目录中找到文件: {file_id} -> {file_path}")
                 return str(file_path)
         
+        # 搜索图库目录（包括所有子目录）
+        for file_path in self.gallery_path.rglob(f"{file_id}.*"):
+            if file_path.is_file():
+                # 更新内存映射
+                self.file_mapping[file_id] = str(file_path)
+                self.logger.info(f"在gallery目录中找到文件: {file_id} -> {file_path}")
+                return str(file_path)
+        
         self.logger.warning(f"未找到文件: {file_id}")
         return None
     
@@ -400,57 +502,9 @@ class FileManager:
                 try:
                     if file_path.stat().st_mtime < cutoff_time:
                         file_path.unlink()
-                        self.logger.debug(f"删除旧文件: {file_path}")
+                        self.logger.info(f"清理旧文件: {file_path}")
                 except Exception as e:
-                    self.logger.error(f"删除文件失败 {file_path}: {str(e)}")
-    
-    def _validate_and_get_image_info(self, image_path: Path) -> Optional[Dict]:
-        """验证图片并获取信息"""
-        try:
-            with Image.open(image_path) as img:
-                return {
-                    'width': img.width,
-                    'height': img.height,
-                    'format': img.format,
-                    'mode': img.mode
-                }
-        except Exception as e:
-            self.logger.error(f"图片验证失败 {image_path}: {str(e)}")
-            return None
-    
-    def get_storage_stats(self) -> Dict:
-        """获取存储统计信息"""
-        try:
-            stats = {
-                'uploads': self._get_directory_stats(self.uploads_path),
-                'generated': self._get_directory_stats(self.generated_path),
-                'videos': self._get_directory_stats(self.videos_path),
-                'temp': self._get_directory_stats(self.temp_path),
-                'total_files': len(self.file_mapping)
-            }
-            return stats
-        except Exception as e:
-            self.logger.error(f"获取存储统计失败: {str(e)}")
-            return {}
-    
-    def _get_directory_stats(self, directory: Path) -> Dict:
-        """获取目录统计信息"""
-        if not directory.exists():
-            return {'count': 0, 'size': 0}
-        
-        count = 0
-        total_size = 0
-        
-        try:
-            for file_path in directory.iterdir():
-                if file_path.is_file():
-                    count += 1
-                    total_size += file_path.stat().st_size
-        except Exception as e:
-            self.logger.error(f"目录统计失败 {directory}: {str(e)}")
-        
-        return {
-            'count': count,
-            'size': total_size,
-            'size_mb': round(total_size / (1024 * 1024), 2)
-        }
+                    self.logger.error(f"清理文件失败 {file_path}: {str(e)}")
+            elif file_path.is_dir():
+                # 递归清理子目录
+                self._cleanup_directory(file_path, cutoff_time)

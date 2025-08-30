@@ -110,6 +110,29 @@ class HealthResponse(BaseModel):
     message: str
     timestamp: str
 
+# 图库相关模型
+class GalleryGroupCreateRequest(BaseModel):
+    name: str
+
+class GalleryGroupUpdateRequest(BaseModel):
+    name: str
+
+class GalleryImageBatchDeleteRequest(BaseModel):
+    image_ids: List[str]
+
+class GalleryComposeVideoRequest(BaseModel):
+    """从图库图片合成视频的请求模型"""
+    selected_image_ids: List[str]
+    audio_id: Optional[str] = None
+    fps: int = 30
+    per_slide_seconds: float = 3.0
+    transition_seconds: float = 0.6
+    transition_effects: Optional[List[str]] = None
+    width: int = 1280
+    height: int = 720
+    image_multiplier: int = 1
+    include_original: bool = False
+
 # 初始化服务
 config = Config()
 logger = setup_logger()
@@ -185,6 +208,35 @@ async def get_database_status():
     else:
         return {"connected": False, "error": "Database service not initialized"}
 
+@app.get('/api/history')
+async def get_history_tasks(limit: int = 50, skip: int = 0):
+    """获取历史任务列表"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 获取历史任务列表
+        tasks = await db_service.get_history_tasks(limit, skip)
+        
+        # 为每个任务添加图片计数
+        for task in tasks:
+            if 'images' in task:
+                task['image_count'] = len(task['images'])
+            else:
+                task['image_count'] = 0
+        
+        return {
+            "success": True,
+            "tasks": tasks
+        }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取历史任务列表失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取历史任务列表失败: {str(e)}")
+
 @app.delete('/api/history/{task_id}')
 async def delete_history_task(task_id: str):
     """删除历史任务及其相关文件"""
@@ -198,241 +250,55 @@ async def delete_history_task(task_id: str):
         if not task:
             raise HTTPException(status_code=404, detail="历史任务不存在")
         
+        # 删除任务相关的文件
         deleted_files = []
+        if 'images' in task:
+            for image in task['images']:
+                if 'file_id' in image:
+                    file_id = image['file_id']
+                    if file_manager.delete_file(file_id):
+                        deleted_files.append(file_id)
         
-        # 获取所有历史任务，用于检查文件引用
-        all_tasks = await db_service.get_history_tasks(limit=1000)
+        if 'video_id' in task:
+            video_id = task['video_id']
+            if file_manager.delete_file(video_id):
+                deleted_files.append(video_id)
         
-        # 收集所有其他任务引用的文件ID
-        referenced_file_ids = set()
-        for other_task in all_tasks:
-            if other_task.get('task_id') != task_id:  # 排除当前要删除的任务
-                # 收集图片文件ID
-                if other_task.get('images'):
-                    for img in other_task['images']:
-                        if img and 'file_id' in img:
-                            referenced_file_ids.add(img['file_id'])
-                
-                # 收集原始图片ID
-                if other_task.get('original_image_id'):
-                    referenced_file_ids.add(other_task['original_image_id'])
-                
-                # 收集视频文件ID
-                if other_task.get('video_id'):
-                    referenced_file_ids.add(other_task['video_id'])
-        
-        logger.info(f"其他任务引用的文件ID数量: {len(referenced_file_ids)}")
-        
-        # 删除任务相关的图片文件（只删除未被其他任务引用的文件）
-        if task.get('images'):
-            for img in task['images']:
-                if img and 'file_id' in img:
-                    file_id = img['file_id']
-                    if file_id not in referenced_file_ids:
-                        # 此文件未被其他任务引用，可以安全删除
-                        if file_manager.delete_file(file_id):
-                            deleted_files.append(f"image:{file_id}")
-                            logger.info(f"删除未引用的图片文件: {file_id}")
-                    else:
-                        logger.info(f"保留被其他任务引用的图片文件: {file_id}")
-        
-        # 删除原始图片文件（只删除未被其他任务引用的文件）
-        if task.get('original_image_id'):
-            file_id = task['original_image_id']
-            if file_id not in referenced_file_ids:
-                if file_manager.delete_file(file_id):
-                    deleted_files.append(f"original:{file_id}")
-                    logger.info(f"删除未引用的原始图片: {file_id}")
-            else:
-                logger.info(f"保留被其他任务引用的原始图片: {file_id}")
-        
-        # 删除视频文件（只删除未被其他任务引用的文件）
-        if task.get('video_id'):
-            file_id = task['video_id']
-            if file_id not in referenced_file_ids:
-                if file_manager.delete_file(file_id):
-                    deleted_files.append(f"video:{file_id}")
-                    logger.info(f"删除未引用的视频文件: {file_id}")
-            else:
-                logger.info(f"保留被其他任务引用的视频文件: {file_id}")
-        
-        # 从MongoDB删除任务记录
+        # 从数据库中删除任务记录
         success = await db_service.delete_history_task(task_id)
-        if not success:
-            logger.warning(f"删除MongoDB记录失败，但文件已删除: {task_id}")
         
-        logger.info(f"历史任务删除完成: {task_id}, 删除文件: {deleted_files}")
-        
-        return {
-            'success': True,
-            'message': f'历史任务删除成功，已删除 {len(deleted_files)} 个文件',
-            'deleted_files': deleted_files,
-            'task_id': task_id
-        }
-        
+        if success:
+            return {
+                "success": True,
+                "message": f"历史任务 {task_id} 删除成功",
+                "deleted_files": deleted_files,
+                "deleted_count": len(deleted_files)
+            }
+        else:
+            raise HTTPException(status_code=500, detail="删除历史任务失败")
+            
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"删除历史任务失败 (task_id: {task_id}): {str(e)}")
-        raise HTTPException(status_code=500, detail=f'删除失败: {str(e)}')
+        raise HTTPException(status_code=500, detail=f"删除历史任务失败: {str(e)}")
 
-@app.post('/api/database/cleanup-orphaned-files')
-async def cleanup_orphaned_files():
-    """清理孤儿文件（未被任何任务引用的文件）"""
-    try:
-        db_service = await get_database_service()
-        if not db_service or not db_service.is_connected():
-            raise HTTPException(status_code=503, detail="数据库不可用")
-        
-        # 获取所有历史任务
-        all_tasks = await db_service.get_history_tasks(limit=1000)
-        
-        # 收集所有被引用的文件ID
-        referenced_file_ids = set()
-        for task in all_tasks:
-            # 收集图片文件ID
-            if task.get('images'):
-                for img in task['images']:
-                    if img and 'file_id' in img:
-                        referenced_file_ids.add(img['file_id'])
-            
-            # 收集原始图片ID
-            if task.get('original_image_id'):
-                referenced_file_ids.add(task['original_image_id'])
-            
-            # 收集视频文件ID
-            if task.get('video_id'):
-                referenced_file_ids.add(task['video_id'])
-        
-        # 从活跃任务中收集引用
-        for task_info in active_tasks.values():
-            if task_info.get('images'):
-                for img in task_info['images']:
-                    if img and img.get('file_id'):
-                        referenced_file_ids.add(img['file_id'])
-            if task_info.get('original_image_id'):
-                referenced_file_ids.add(task_info['original_image_id'])
-            if task_info.get('video_id'):
-                referenced_file_ids.add(task_info['video_id'])
-        
-        logger.info(f"总共发现 {len(referenced_file_ids)} 个被引用的文件")
-        
-        # 扫描所有存储目录，查找孤儿文件
-        orphaned_files = []
-        storage_dirs = [
-            file_manager.uploads_path,
-            file_manager.generated_path,
-            file_manager.videos_path
-        ]
-        
-        for storage_dir in storage_dirs:
-            if storage_dir.exists():
-                for file_path in storage_dir.iterdir():
-                    if file_path.is_file():
-                        # 从文件名提取文件ID
-                        filename = file_path.stem  # 不包含扩展名
-                        if filename not in referenced_file_ids:
-                            orphaned_files.append(str(file_path))
-        
-        # 删除孤儿文件
-        deleted_count = 0
-        for file_path in orphaned_files:
-            try:
-                os.remove(file_path)
-                deleted_count += 1
-                logger.info(f"删除孤儿文件: {file_path}")
-            except Exception as e:
-                logger.error(f"删除孤儿文件失败 {file_path}: {str(e)}")
-        
-        return {
-            'success': True,
-            'message': f'清理完成，删除了 {deleted_count} 个孤儿文件',
-            'total_referenced': len(referenced_file_ids),
-            'orphaned_found': len(orphaned_files),
-            'deleted_count': deleted_count
-        }
-        
-    except Exception as e:
-        logger.error(f"清理孤儿文件失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f'清理失败: {str(e)}')
-
-@app.post('/api/database/cleanup-invalid-images')
-async def cleanup_invalid_image_references():
-    """清理历史任务中无效的图片引用"""
-    db_service = await get_database_service()
-    if not db_service or not db_service.is_connected():
-        raise HTTPException(status_code=503, detail="数据库不可用")
-    
-    try:
-        # 获取所有历史任务
-        tasks = await db_service.get_history_tasks(limit=1000)
-        
-        cleaned_tasks = 0
-        removed_images = 0
-        
-        for task in tasks:
-            task_id = task.get('task_id')
-            images = task.get('images', [])
-            
-            if not images:
-                continue
-                
-            # 检查每个图片文件是否存在
-            valid_images = []
-            for img in images:
-                if img and 'file_id' in img:
-                    file_path = file_manager.get_file_path(img['file_id'])
-                    if file_path and os.path.exists(file_path):
-                        valid_images.append(img)
-                    else:
-                        removed_images += 1
-                        logger.info(f"发现无效图片引用: {img['file_id']} 在任务 {task_id} 中")
-            
-            # 如果有无效图片，更新任务
-            if len(valid_images) != len(images):
-                await db_service.history_collection.update_one(
-                    {"task_id": task_id},
-                    {"$set": {"images": valid_images}}
-                )
-                cleaned_tasks += 1
-                logger.info(f"已清理任务 {task_id}，从 {len(images)} 张图片清理到 {len(valid_images)} 张")
-        
-        return {
-            'success': True,
-            'message': f'清理完成：处理了 {cleaned_tasks} 个任务，移除了 {removed_images} 个无效图片引用',
-            'cleaned_tasks': cleaned_tasks,
-            'removed_images': removed_images
-        }
-        
-    except Exception as e:
-        logger.error(f"清理无效图片引用失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f'清理失败: {str(e)}')
+# ==================== 文件上传和管理 ====================
 
 @app.post('/api/upload', response_model=UploadResponse)
-async def upload_file(file: UploadFile = File(...), type: str = Form(default='image')):
-    """文件上传端点"""
+async def upload_file(file: UploadFile = File(...), type: str = Form(...)):
+    """上传文件"""
     try:
-        if not file.filename:
-            raise HTTPException(status_code=400, detail='没有选择文件')
-        
         # 验证文件类型
+        if type not in ['image', 'audio', 'video']:
+            raise HTTPException(status_code=400, detail="不支持的文件类型")
+        
+        # 验证文件扩展名
         if not file_manager.is_valid_file(file.filename, type):
-            raise HTTPException(status_code=400, detail=f'不支持的{type}文件格式')
-        
-        # 检查文件大小
-        file_size = 0
-        content = await file.read()
-        file_size = len(content)
-        
-        if type == 'image' and file_size > config.MAX_IMAGE_SIZE:
-            raise HTTPException(status_code=413, detail='图片文件过大')
-        elif type == 'audio' and file_size > config.MAX_AUDIO_SIZE:
-            raise HTTPException(status_code=413, detail='音频文件过大')
+            raise HTTPException(status_code=400, detail=f"不支持的文件格式: {file.filename}")
         
         # 保存文件
-        file_info = file_manager.save_uploaded_file_from_bytes(
-            content, file.filename, type
-        )
+        file_info = file_manager.save_uploaded_file(file, type)
         
         return UploadResponse(
             success=True,
@@ -446,358 +312,624 @@ async def upload_file(file: UploadFile = File(...), type: str = Form(default='im
         raise
     except Exception as e:
         logger.error(f"文件上传失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f'文件上传失败: {str(e)}')
-
-@app.post('/api/generate-images', response_model=TaskResponse)
-async def generate_images_only(request: GenerateImagesRequest, background_tasks: BackgroundTasks):
-    """只生成图片，不进行视频合成"""
-    try:
-        # 生成任务ID
-        task_id = str(uuid.uuid4())
-        
-        # 解析配置参数
-        config_params = {
-            'slide_count': request.slide_count,
-            'concurrent_limit': request.concurrent_limit,
-            'selected_styles': request.selected_styles
-        }
-        
-        # 初始化任务状态
-        active_tasks[task_id] = {
-            'status': 'started',
-            'progress': 0,
-            'message': '图片生成任务已开始',
-            'created_at': datetime.now().isoformat(),
-            'config': config_params,
-            'images': [],
-            'video_url': None,
-            'error': None,
-            'original_image_id': request.image_id,
-            'generation_only': True  # 标记为只生成图片的任务
-        }
-        
-        # 添加到后台任务
-        background_tasks.add_task(
-            generate_images_async,
-            task_id,
-            request.image_id,
-            request.api_key,
-            config_params
-        )
-        
-        return TaskResponse(
-            success=True,
-            task_id=task_id,
-            message='图片生成任务已开始',
-            status_url=f'/api/tasks/{task_id}'
-        )
-        
-    except Exception as e:
-        logger.error(f"生成任务创建失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f'任务创建失败: {str(e)}')
-
-@app.post('/api/compose-video', response_model=TaskResponse)
-async def compose_video_from_images(request: ComposeVideoRequest, background_tasks: BackgroundTasks):
-    """从已有图片合成视频"""
-    try:
-        # 检查原始任务是否存在
-        if request.task_id not in active_tasks:
-            raise HTTPException(status_code=404, detail='原始任务不存在')
-        
-        original_task = active_tasks[request.task_id]
-        
-        # 检查原始任务是否已完成图片生成
-        if not original_task.get('generation_only') or original_task.get('status') != 'images_ready':
-            raise HTTPException(status_code=400, detail='原始任务不是图片生成任务或尚未完成')
-        
-        # 验证选中的图片ID
-        available_image_ids = [img['file_id'] for img in original_task.get('images', []) if img]
-        for image_id in request.selected_image_ids:
-            if image_id not in available_image_ids:
-                raise HTTPException(status_code=400, detail=f'无效的图片ID: {image_id}')
-        
-        # 生成新的任务ID
-        new_task_id = str(uuid.uuid4())
-        
-        # 配置参数
-        config_params = {
-            'fps': request.fps,
-            'per_slide_seconds': request.per_slide_seconds,
-            'transition_seconds': request.transition_seconds,
-            'transition_effects': request.transition_effects,
-            'width': request.width,
-            'height': request.height,
-            'include_original': request.include_original
-        }
-        
-        # 初始化新任务状态
-        active_tasks[new_task_id] = {
-            'status': 'started',
-            'progress': 0,
-            'message': '正在从选中的图片合成视频...',
-            'created_at': datetime.now().isoformat(),
-            'config': config_params,
-            'images': [],
-            'video_url': None,
-            'error': None,
-            'is_compose': True,
-            'original_task_id': request.task_id
-        }
-        
-        # 添加到后台任务
-        background_tasks.add_task(
-            compose_video_async,
-            new_task_id,
-            original_task['original_image_id'],
-            request.audio_id,
-            config_params,
-            request.selected_image_ids,
-            request.include_original
-        )
-        
-        return TaskResponse(
-            success=True,
-            task_id=new_task_id,
-            message='视频合成任务已开始',
-            status_url=f'/api/tasks/{new_task_id}'
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"视频合成任务创建失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f'任务创建失败: {str(e)}')
-
-@app.delete('/api/images/{image_id}')
-async def delete_generated_image(image_id: str):
-    """删除生成的图片"""
-    try:
-        # 获取图片文件路径
-        image_path = file_manager.get_file_path(image_id)
-        if not image_path or not os.path.exists(image_path):
-            raise HTTPException(status_code=404, detail='图片不存在')
-        
-        # 删除文件
-        os.remove(image_path)
-        
-        # 从所有活跃任务中移除此图片引用
-        updated_tasks = []
-        for task_id, task_info in active_tasks.items():
-            if 'images' in task_info:
-                original_count = len(task_info['images'])
-                task_info['images'] = [img for img in task_info['images'] if img and img.get('file_id') != image_id]
-                if len(task_info['images']) != original_count:
-                    updated_tasks.append(task_id)
-        
-        # 同步更新MongoDB中的历史任务
-        db_service = await get_database_service()
-        if db_service and db_service.is_connected():
-            try:
-                updated_count = await db_service.remove_image_from_history_tasks(image_id)
-                logger.info(f"已从 {updated_count} 个历史任务中移除图片 {image_id}")
-            except Exception as e:
-                logger.error(f"更新MongoDB历史任务失败: {str(e)}")
-                # 不抛出异常，因为文件已经成功删除
-        
-        logger.info(f"已删除图片: {image_id}，影响了 {len(updated_tasks)} 个活跃任务")
-        return {'success': True, 'message': '图片删除成功'}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"删除图片失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f'删除图片失败: {str(e)}')
-
-@app.post('/api/generate', response_model=TaskResponse)
-async def generate_stylized_video(request: GenerateRequest, background_tasks: BackgroundTasks):
-    """生成风格化视频的主端点"""
-    try:
-        # 生成任务ID
-        task_id = str(uuid.uuid4())
-        
-        # 解析配置参数
-        config_params = {
-            'slide_count': request.slide_count,
-            'fps': request.fps,
-            'per_slide_seconds': request.per_slide_seconds,
-            'transition_seconds': request.transition_seconds,
-            'width': request.width,
-            'height': request.height,
-            'include_original': request.include_original,
-            'concurrent_limit': request.concurrent_limit,
-            'selected_styles': request.selected_styles
-        }
-        
-        # 初始化任务状态
-        active_tasks[task_id] = {
-            'status': 'started',
-            'progress': 0,
-            'message': '任务已开始',
-            'created_at': datetime.now().isoformat(),
-            'config': config_params,
-            'images': [],
-            'video_url': None,
-            'error': None,
-            'original_image_id': request.image_id  # 保存原始图片ID
-        }
-        logger.info(f"任务已开始: {request.api_key}")
-        # 添加到后台任务
-        background_tasks.add_task(
-            generate_video_async,
-            task_id,
-            request.image_id,
-            request.api_key,
-            request.audio_id,
-            config_params
-        )
-        
-        return TaskResponse(
-            success=True,
-            task_id=task_id,
-            message='视频生成任务已开始',
-            status_url=f'/api/tasks/{task_id}'
-        )
-        
-    except Exception as e:
-        logger.error(f"生成任务创建失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f'任务创建失败: {str(e)}')
-
-@app.get('/api/tasks/{task_id}')
-async def get_task_status(task_id: str):
-    """获取任务状态"""
-    if task_id not in active_tasks:
-        raise HTTPException(status_code=404, detail='任务不存在')
-    
-    return active_tasks[task_id]
-
-@app.get('/api/history')
-async def get_history_tasks():
-    """获取历史任务列表"""
-    db_service = await get_database_service()
-    
-    if db_service and db_service.is_connected():
-        # 从 MongoDB 获取历史任务
-        try:
-            tasks = await db_service.get_history_tasks(limit=100)
-            
-            # 转换数据格式以兼容前端
-            history_list = []
-            for task in tasks:
-                history_list.append({
-                    'task_id': task.get('task_id'),
-                    'created_at': task.get('created_at'),
-                    'completed_at': task.get('completed_at'),
-                    'image_count': len(task.get('images', [])),
-                    'config': task.get('config', {}),
-                    'images': task.get('images', []),
-                    'original_image_id': task.get('original_image_id'),
-                    'video_url': task.get('video_url'),  # 添加视频URL字段
-                    'video_id': task.get('video_id')     # 添加视频ID字段
-                })
-            
-            logger.info(f"从 MongoDB 获取到 {len(history_list)} 个历史任务")
-            return {'tasks': history_list}
-            
-        except Exception as e:
-            logger.error(f"从 MongoDB 获取历史任务失败: {str(e)}")
-            return {'tasks': [], 'error': '获取历史任务失败'}
-    else:
-        # MongoDB 不可用，返回空列表
-        logger.warning("MongoDB 不可用，返回空历史任务列表")
-        return {'tasks': [], 'warning': 'MongoDB 不可用，无法获取历史任务'}
-
-@app.post('/api/regenerate', response_model=TaskResponse)
-async def regenerate_video_from_history(request: RegenerateVideoRequest, background_tasks: BackgroundTasks):
-    """从历史任务重新生成视频"""
-    try:
-        db_service = await get_database_service()
-        history_task = None
-        
-        if db_service and db_service.is_connected():
-            # 从 MongoDB 获取历史任务
-            history_task = await db_service.get_history_task_by_id(request.task_id)
-        
-        if not history_task:
-            raise HTTPException(status_code=404, detail='历史任务不存在')
-        
-        # 生成新的任务ID
-        new_task_id = str(uuid.uuid4())
-        
-        # 配置参数
-        config_params = {
-            'fps': request.fps,
-            'per_slide_seconds': request.per_slide_seconds,
-            'transition_seconds': request.transition_seconds,
-            'transition_effects': request.transition_effects,
-            'width': request.width,
-            'height': request.height,
-            'include_original': history_task['config'].get('include_original', True),
-            'image_multiplier': request.image_multiplier
-        }
-        
-        # 初始化新任务状态
-        active_tasks[new_task_id] = {
-            'status': 'started',
-            'progress': 0,
-            'message': '正在从历史任务重新生成视频...',
-            'created_at': datetime.now().isoformat(),
-            'config': config_params,
-            'images': history_task['images'],  # 复用历史图片
-            'video_url': None,
-            'error': None,
-            'is_regenerate': True,
-            'original_task_id': request.task_id
-        }
-        
-        # 添加到后台任务
-        background_tasks.add_task(
-            regenerate_video_async,
-            new_task_id,
-            history_task['original_image_id'],
-            request.audio_id,
-            config_params,
-            history_task['images']
-        )
-        
-        return TaskResponse(
-            success=True,
-            task_id=new_task_id,
-            message='视频重新生成任务已开始',
-            status_url=f'/api/tasks/{new_task_id}'
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"重新生成任务创建失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f'任务创建失败: {str(e)}')
+        raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
 
 @app.get('/api/files/{file_id}')
-async def serve_file(file_id: str):
-    """提供文件下载服务"""
+async def get_file(file_id: str):
+    """获取文件"""
     try:
         file_path = file_manager.get_file_path(file_id)
         if not file_path or not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail='文件不存在')
+            raise HTTPException(status_code=404, detail="文件不存在")
         
         return FileResponse(file_path)
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"文件服务失败: {str(e)}")
-        raise HTTPException(status_code=500, detail='文件服务失败')
+        logger.error(f"获取文件失败 (file_id: {file_id}): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取文件失败: {str(e)}")
 
-@app.post('/api/tasks/{task_id}/cancel')
-async def cancel_task(task_id: str):
-    """取消任务"""
-    if task_id not in active_tasks:
-        raise HTTPException(status_code=404, detail='任务不存在')
-    
-    active_tasks[task_id]['status'] = 'cancelled'
-    active_tasks[task_id]['message'] = '任务已取消'
-    
-    return {'success': True, 'message': '任务已取消'}
+@app.delete('/api/images/{image_id}')
+async def delete_image(image_id: str):
+    """删除图片文件"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 从所有历史任务中移除对该图片的引用
+        updated_tasks_count = await db_service.remove_image_from_history_tasks(image_id)
+        logger.info(f"从 {updated_tasks_count} 个历史任务中移除了图片引用")
+        
+        # 删除文件
+        if file_manager.delete_file(image_id):
+            return {"success": True, "message": "图片删除成功"}
+        else:
+            raise HTTPException(status_code=404, detail="图片不存在或删除失败")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除图片失败 (image_id: {image_id}): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除图片失败: {str(e)}")
+
+# ==================== 图库功能API ====================
+
+@app.post('/api/gallery/groups')
+async def create_gallery_group(request: GalleryGroupCreateRequest):
+    """创建图库分组"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 生成分组ID
+        group_id = str(uuid.uuid4())
+        
+        # 创建分组
+        success = await db_service.create_gallery_group(group_id, request.name)
+        
+        if success:
+            return {
+                "success": True,
+                "group_id": group_id,
+                "message": "分组创建成功"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="分组创建失败")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建图库分组失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"创建图库分组失败: {str(e)}")
+
+@app.get('/api/gallery/groups')
+async def get_gallery_groups():
+    """获取所有图库分组"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 获取分组列表
+        groups = await db_service.get_gallery_groups()
+        
+        return {
+            "success": True,
+            "groups": groups
+        }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取图库分组失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取图库分组失败: {str(e)}")
+
+@app.get('/api/gallery/groups/{group_id}')
+async def get_gallery_group(group_id: str):
+    """获取图库分组详情"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 获取分组信息
+        group = await db_service.get_gallery_group_by_id(group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="分组不存在")
+        
+        return {
+            "success": True,
+            "group": group
+        }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取图库分组详情失败 (group_id: {group_id}): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取图库分组详情失败: {str(e)}")
+
+@app.put('/api/gallery/groups/{group_id}')
+async def update_gallery_group(group_id: str, request: GalleryGroupUpdateRequest):
+    """更新图库分组"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 检查分组是否存在
+        group = await db_service.get_gallery_group_by_id(group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="分组不存在")
+        
+        # 更新分组
+        success = await db_service.update_gallery_group(group_id, request.name)
+        
+        if success:
+            return {
+                "success": True,
+                "message": "分组更新成功"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="分组更新失败")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新图库分组失败 (group_id: {group_id}): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"更新图库分组失败: {str(e)}")
+
+@app.delete('/api/gallery/groups/{group_id}')
+async def delete_gallery_group(group_id: str):
+    """删除图库分组"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 检查分组是否存在
+        group = await db_service.get_gallery_group_by_id(group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="分组不存在")
+        
+        # 删除分组
+        success = await db_service.delete_gallery_group(group_id)
+        
+        if success:
+            return {
+                "success": True,
+                "message": "分组删除成功"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="分组删除失败")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除图库分组失败 (group_id: {group_id}): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除图库分组失败: {str(e)}")
+
+@app.post('/api/gallery/upload')
+async def upload_gallery_image(file: UploadFile = File(...), group_id: str = Form(...)):
+    """上传图片到图库分组"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 验证文件类型
+        if not file_manager.is_valid_file(file.filename, 'image'):
+            raise HTTPException(status_code=400, detail=f"不支持的图片格式: {file.filename}")
+        
+        # 检查分组是否存在
+        group = await db_service.get_gallery_group_by_id(group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="分组不存在")
+        
+        # 保存图片文件
+        file_info = file_manager.save_gallery_image(file, group_id)
+        
+        # 保存图片信息到数据库
+        metadata = {
+            'width': file_info.get('width', 0),
+            'height': file_info.get('height', 0),
+            'size': file_info.get('size', 0),
+            'filename': file_info.get('filename', ''),
+            'safe_filename': file_info.get('safe_filename', '')
+        }
+        
+        success = await db_service.add_image_to_gallery_group(
+            file_info['file_id'], 
+            group_id, 
+            file_info['filename'], 
+            metadata
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "file_id": file_info['file_id'],
+                "filename": file_info['filename'],
+                "size": file_info['size'],
+                "url": f'/api/files/{file_info["file_id"]}'
+            }
+        else:
+            # 如果数据库保存失败，删除已保存的文件
+            file_manager.delete_file(file_info['file_id'])
+            raise HTTPException(status_code=500, detail="图片信息保存失败")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"图库图片上传失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"图库图片上传失败: {str(e)}")
+
+@app.get('/api/gallery/groups/{group_id}/images')
+async def get_gallery_images(group_id: str):
+    """获取图库分组中的所有图片"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 检查分组是否存在
+        group = await db_service.get_gallery_group_by_id(group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="分组不存在")
+        
+        # 获取分组中的图片
+        images = await db_service.get_images_in_gallery_group(group_id)
+        
+        return {
+            "success": True,
+            "images": images
+        }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取图库图片失败 (group_id: {group_id}): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取图库图片失败: {str(e)}")
+
+@app.delete('/api/gallery/images/{image_id}')
+async def delete_gallery_image(image_id: str):
+    """删除图库图片"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 删除数据库记录
+        success = await db_service.delete_gallery_image(image_id)
+        
+        if success:
+            # 删除文件
+            file_manager.delete_file(image_id)
+            
+            return {
+                "success": True,
+                "message": "图片删除成功"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="图片不存在")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除图库图片失败 (image_id: {image_id}): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除图库图片失败: {str(e)}")
+
+@app.post('/api/gallery/images/batch-delete')
+async def batch_delete_gallery_images(request: GalleryImageBatchDeleteRequest):
+    """批量删除图库图片"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 删除数据库记录
+        deleted_count = await db_service.delete_gallery_images_batch(request.image_ids)
+        
+        # 删除文件
+        for image_id in request.image_ids:
+            file_manager.delete_file(image_id)
+        
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "message": f"成功删除 {deleted_count} 张图片"
+        }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"批量删除图库图片失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"批量删除图库图片失败: {str(e)}")
+
+@app.post('/api/gallery/compose-video')
+async def compose_gallery_video(request: GalleryComposeVideoRequest, background_tasks: BackgroundTasks):
+    """从图库图片合成视频"""
+    try:
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务状态
+        active_tasks[task_id] = {
+            'task_id': task_id,
+            'status': 'pending',
+            'message': '任务已创建，等待处理...',
+            'progress': 0,
+            'images': [],
+            'created_at': datetime.now().isoformat()
+        }
+        
+        # 在后台执行视频合成
+        background_tasks.add_task(
+            compose_gallery_video_async, 
+            task_id, 
+            request.selected_image_ids,
+            request.audio_id,
+            request.dict()
+        )
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "message": "视频合成任务已启动",
+            "status_url": f"/api/tasks/{task_id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"启动图库视频合成任务失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"启动视频合成任务失败: {str(e)}")
+
+async def compose_gallery_video_async(task_id: str, selected_image_ids: List[str], 
+                                     audio_id: Optional[str], config: Dict):
+    """从图库图片异步合成视频"""
+    try:
+        # 更新任务状态
+        active_tasks[task_id]['status'] = 'processing'
+        active_tasks[task_id]['message'] = '正在准备视频合成...'
+        active_tasks[task_id]['progress'] = 20
+        
+        # 准备音频路径
+        audio_path = None
+        if audio_id:
+            audio_path = file_manager.get_file_path(audio_id)
+            logger.info(f"音频文件路径: {audio_path}")
+        
+        active_tasks[task_id]['progress'] = 40
+        active_tasks[task_id]['message'] = '正在合成视频...'
+        
+        logger.info(f"从图库图片合成视频参数:")
+        logger.info(f"  - 选中图片ID列表: {selected_image_ids}")
+        logger.info(f"  - 音频路径: {audio_path}")
+        logger.info(f"  - 配置: {config}")
+        
+        # 合成视频（使用空字符串作为原始图片路径，因为图库模式不需要原始图片）
+        video_path = await video_composer.compose_video(
+            "",  # 图库模式不需要原始图片
+            selected_image_ids,
+            audio_path,
+            config,
+            task_id,
+            progress_callback=lambda p: update_progress(task_id, 40 + p * 0.5, '正在合成视频...')
+        )
+        
+        # 保存视频并获取URL
+        video_info = file_manager.save_video_file(video_path)
+        
+        # 完成任务
+        completed_task = {
+            'status': 'completed',
+            'progress': 100,
+            'message': '视频合成完成',
+            'video_url': f'/api/files/{video_info["file_id"]}',
+            'video_id': video_info['file_id'],
+            'completed_at': datetime.now().isoformat()
+        }
+        
+        active_tasks[task_id].update(completed_task)
+        
+        # 保存到MongoDB历史任务
+        await save_task_to_history(task_id)
+        
+    except Exception as e:
+        logger.error(f"图库视频合成失败 (task_id: {task_id}): {str(e)}")
+        active_tasks[task_id].update({
+            'status': 'error',
+            'message': f'合成失败: {str(e)}',
+            'error': str(e)
+        })
+
+@app.get('/api/tasks/{task_id}')
+async def get_task_status(task_id: str):
+    """获取任务状态"""
+    if task_id in active_tasks:
+        return active_tasks[task_id]
+    else:
+        # 检查是否是历史任务
+        db_service = await get_database_service()
+        if db_service and db_service.is_connected():
+            task = await db_service.get_history_task_by_id(task_id)
+            if task:
+                return task
+        
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+@app.post('/api/generate', response_model=TaskResponse)
+async def generate_video(request: GenerateRequest, background_tasks: BackgroundTasks):
+    """生成视频（包括风格化图片和视频合成）"""
+    try:
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务状态
+        active_tasks[task_id] = {
+            'task_id': task_id,
+            'status': 'pending',
+            'message': '任务已创建，等待处理...',
+            'progress': 0,
+            'images': [],
+            'config': request.dict(),
+            'created_at': datetime.now().isoformat()
+        }
+        
+        # 在后台执行视频生成
+        background_tasks.add_task(
+            generate_video_async, 
+            task_id, 
+            request.image_id, 
+            request.api_key, 
+            request.audio_id,
+            request.dict()
+        )
+        
+        return TaskResponse(
+            success=True,
+            task_id=task_id,
+            message="视频生成任务已启动",
+            status_url=f"/api/tasks/{task_id}"
+        )
+        
+    except Exception as e:
+        logger.error(f"启动视频生成任务失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"启动视频生成任务失败: {str(e)}")
+
+@app.post('/api/regenerate')
+async def regenerate_video(request: RegenerateVideoRequest, background_tasks: BackgroundTasks):
+    """从历史任务重新生成视频"""
+    try:
+        db_service = await get_database_service()
+        if not db_service or not db_service.is_connected():
+            raise HTTPException(status_code=503, detail="数据库不可用")
+        
+        # 获取历史任务
+        history_task = await db_service.get_history_task_by_id(request.task_id)
+        if not history_task:
+            raise HTTPException(status_code=404, detail="历史任务不存在")
+        
+        # 生成新的任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务状态
+        active_tasks[task_id] = {
+            'task_id': task_id,
+            'status': 'pending',
+            'message': '任务已创建，等待处理...',
+            'progress': 0,
+            'images': history_task.get('images', []),
+            'config': request.dict(),
+            'created_at': datetime.now().isoformat()
+        }
+        
+        # 获取原始图片ID
+        original_image_id = history_task.get('config', {}).get('image_id')
+        if not original_image_id:
+            raise HTTPException(status_code=400, detail="历史任务中未找到原始图片信息")
+        
+        # 在后台执行视频重新生成
+        background_tasks.add_task(
+            regenerate_video_async, 
+            task_id, 
+            original_image_id,
+            request.audio_id,
+            request.dict(),
+            history_task.get('images', [])
+        )
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "message": "视频重新生成任务已启动",
+            "status_url": f"/api/tasks/{task_id}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"启动视频重新生成任务失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"启动视频重新生成任务失败: {str(e)}")
+
+@app.post('/api/generate-images')
+async def generate_images_only(request: GenerateImagesRequest, background_tasks: BackgroundTasks):
+    """只生成图片，不进行视频合成"""
+    try:
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务状态
+        active_tasks[task_id] = {
+            'task_id': task_id,
+            'status': 'pending',
+            'message': '任务已创建，等待处理...',
+            'progress': 0,
+            'images': [],  # 用于存储生成的图片信息
+            'config': request.dict(),
+            'created_at': datetime.now().isoformat()
+        }
+        
+        # 在后台执行图片生成
+        background_tasks.add_task(
+            generate_images_async, 
+            task_id, 
+            request.image_id, 
+            request.api_key,
+            request.dict()
+        )
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "message": "图片生成任务已启动",
+            "status_url": f"/api/tasks/{task_id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"启动图片生成任务失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"启动图片生成任务失败: {str(e)}")
+
+@app.post('/api/compose-video')
+async def compose_video(request: ComposeVideoRequest, background_tasks: BackgroundTasks):
+    """从已有的图片合成视频"""
+    try:
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务状态
+        active_tasks[task_id] = {
+            'task_id': task_id,
+            'status': 'pending',
+            'message': '任务已创建，等待处理...',
+            'progress': 0,
+            'images': [],  # 这里不需要图片信息，因为图片已经存在
+            'config': request.dict(),
+            'created_at': datetime.now().isoformat()
+        }
+        
+        # 获取原始任务信息以获取原始图片ID
+        original_task = active_tasks.get(request.task_id)
+        if not original_task:
+            # 检查历史任务
+            db_service = await get_database_service()
+            if db_service and db_service.is_connected():
+                history_task = await db_service.get_history_task_by_id(request.task_id)
+                if history_task:
+                    original_task = history_task
+                else:
+                    raise HTTPException(status_code=404, detail="原始任务不存在")
+            else:
+                raise HTTPException(status_code=404, detail="原始任务不存在")
+        
+        original_image_id = original_task.get('config', {}).get('image_id')
+        if not original_image_id:
+            raise HTTPException(status_code=400, detail="原始任务中未找到原始图片信息")
+        
+        # 在后台执行视频合成
+        background_tasks.add_task(
+            compose_video_async, 
+            task_id, 
+            original_image_id,
+            request.audio_id,
+            request.dict(),
+            request.selected_image_ids,
+            request.include_original
+        )
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "message": "视频合成任务已启动",
+            "status_url": f"/api/tasks/{task_id}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"启动视频合成任务失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"启动视频合成任务失败: {str(e)}")
 
 async def generate_video_async(task_id: str, image_id: str, api_key: str, 
                              audio_id: Optional[str], config: Dict):

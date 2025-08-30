@@ -78,6 +78,37 @@
     .history-task-info{font-size:11px;color:var(--muted);line-height:1.4}
     .history-task-delete{background:rgba(239,68,68,0.8);color:white;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;font-weight:bold;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;margin-left:8px}
     .history-task-delete:hover{background:rgba(239,68,68,1);transform:scale(1.1)}
+    
+    /* 图库网格样式 */
+    .gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;max-height:300px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px}
+    .gallery-item{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;border:2px solid transparent;transition:all 0.2s;cursor:pointer}
+    .gallery-item:hover{border-color:rgba(34,211,238,.3);transform:scale(1.02)}
+    .gallery-item.selected{border-color:#22d3ee;box-shadow:0 0 12px rgba(34,211,238,.4)}
+    .gallery-item img{width:100%;height:100%;object-fit:cover}
+    .gallery-item-checkbox{position:absolute;top:4px;left:4px;width:16px;height:16px;cursor:pointer;z-index:2}
+    .gallery-item-delete{position:absolute;top:4px;right:4px;background:rgba(239,68,68,0.8);color:white;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:bold;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;z-index:2}
+    .gallery-item-delete:hover{background:rgba(239,68,68,1);transform:scale(1.1)}
+    .gallery-group-option{padding:8px;border-bottom:1px solid rgba(255,255,255,.1);cursor:pointer;transition:background-color 0.2s}
+    .gallery-group-option:hover{background:rgba(255,255,255,.05)}
+    .gallery-group-option.selected{background:rgba(34,211,238,.1);color:#22d3ee}
+    
+    /* 图库输入框样式 */
+    .modal-input {
+      width: 100%;
+      padding: 10px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+    }
+    
+    .modal-input:focus {
+      outline: 2px solid var(--accent);
+      border-color: var(--accent);
+    }
+    
     @media (max-width: 768px) {
       .grid{grid-template-columns:1fr}
       .wrap{padding:8px}
@@ -105,6 +136,7 @@
             <button type="button" id="newTaskBtn" class="mode-btn active" onclick="switchMode('new')">新任务</button>
             <button type="button" id="imageOnlyBtn" class="mode-btn" onclick="switchMode('image-only')">仅生成图片</button>
             <button type="button" id="historyTaskBtn" class="mode-btn" onclick="switchMode('history')">历史任务</button>
+            <button type="button" id="galleryBtn" class="mode-btn" onclick="switchMode('gallery')">我的图库</button>
           </div>
         </div>
 
@@ -345,6 +377,116 @@
                 <div id="historyTransitionEffects" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px;max-height:120px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px">
                   <!-- 转场效果选项将由JavaScript生成 -->
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 我的图库模式 -->
+        <div id="galleryMode" style="display:none">
+          <!-- 分组管理 -->
+          <div style="margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <h3 style="font-size:14px;margin:0">图片分组管理</h3>
+              <div style="display:flex;gap:8px">
+                <button type="button" onclick="createNewGalleryGroup()" style="padding:4px 8px;font-size:11px;width:auto">新建分组</button>
+                <button type="button" onclick="loadGalleryGroups()" style="padding:4px 8px;font-size:11px;width:auto">刷新</button>
+              </div>
+            </div>
+            
+            <!-- 分组选择下拉框 -->
+            <select id="galleryGroupSelect" onchange="selectGalleryGroup()" style="width:100%;margin-bottom:8px">
+              <option value="">选择或创建分组...</option>
+            </select>
+            
+            <!-- 分组管理按钮 -->
+            <div id="galleryGroupActions" style="display:none;gap:8px;margin-bottom:8px">
+              <button type="button" onclick="renameGalleryGroup()" style="padding:4px 8px;font-size:11px;width:auto">重命名分组</button>
+              <button type="button" onclick="deleteGalleryGroup()" style="padding:4px 8px;font-size:11px;width:auto;background:#dc3545;color:white">删除分组</button>
+            </div>
+          </div>
+          
+          <!-- 图片上传区域 -->
+          <div id="galleryUploadArea" style="display:none;margin-bottom:16px">
+            <label>上传图片到当前分组</label>
+            <input id="galleryImageUpload" type="file" accept="image/*" multiple />
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">支持多选上传，图片将被添加到当前选中的分组中</div>
+          </div>
+          
+          <!-- 图片网格显示区域 -->
+          <div id="galleryImagesArea" style="display:none">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-size:14px;font-weight:bold" id="galleryGroupTitle">分组中的图片</div>
+              <div style="display:flex;gap:8px">
+                <button type="button" onclick="selectAllGalleryImages()" style="padding:4px 8px;font-size:11px;width:auto">全选</button>
+                <button type="button" onclick="selectNoneGalleryImages()" style="padding:4px 8px;font-size:11px;width:auto">全不选</button>
+                <button type="button" onclick="deleteSelectedGalleryImages()" style="padding:4px 8px;font-size:11px;width:auto;background:#dc3545;color:white">删除选中</button>
+              </div>
+            </div>
+            <div id="galleryImagesGrid" class="gallery-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;max-height:300px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px">
+              <!-- 图片将由JavaScript生成 -->
+            </div>
+          </div>
+          
+          <!-- 生成视频配置 -->
+          <div id="galleryVideoConfig" style="display:none;margin-top:16px">
+            <h3 style="font-size:14px;margin:0 0 12px 0">从图库生成视频</h3>
+            <div class="config-grid">
+              <div>
+                <label>帧率 (FPS)</label>
+                <input id="galleryVideoFps" type="number" value="30" min="15" max="60" />
+              </div>
+              <div>
+                <label>每张图持续时间 (秒)</label>
+                <input id="galleryPerSlideSeconds" type="number" value="3.0" min="0.5" max="5" step="0.1" />
+              </div>
+              <div>
+                <label>图片循环倍数</label>
+                <input id="galleryImageMultiplier" type="number" value="1" min="1" max="10" title="设置图片循环倍数，如3张图片设置3倍则循环为: 1-2-3-1-2-3-1-2-3" />
+              </div>
+              <div>
+                <label>过渡时间 (秒)</label>
+                <input id="galleryTransitionSeconds" type="number" value="0.6" min="0" max="1" step="0.1" />
+              </div>
+              <div>
+                <label>视频宽度</label>
+                <select id="galleryVideoWidth">
+                  <option value="720">720 (抖音竖屏)</option>
+                  <option value="1280">1280 (720p)</option>
+                  <option value="1920">1920 (1080p)</option>
+                  <option value="854">854 (480p)</option>
+                </select>
+              </div>
+              <div>
+                <label>视频高度</label>
+                <select id="galleryVideoHeight">
+                  <option value="1280">1280 (抖音竖屏)</option>
+                  <option value="720">720</option>
+                  <option value="1080">1080</option>
+                  <option value="480">480</option>
+                </select>
+              </div>
+              <div>
+                <label>背景音乐 (可选)</label>
+                <input id="galleryBgmFile" type="file" accept="audio/*" />
+              </div>
+              <div style="grid-column: span 2">
+                <label>转场效果选择</label>
+                <div style="display:flex;gap:4px;margin:4px 0;font-size:10px">
+                  <button type="button" onclick="selectAllGalleryTransitions()" style="padding:2px 6px;font-size:10px;width:auto">全选</button>
+                  <button type="button" onclick="selectNoneGalleryTransitions()" style="padding:2px 6px;font-size:10px;width:auto">清空</button>
+                  <button type="button" onclick="selectSlideGalleryTransitions()" style="padding:2px 6px;font-size:10px;width:auto">只选滑动</button>
+                  <button type="button" onclick="selectFadeGalleryTransitions()" style="padding:2px 6px;font-size:10px;width:auto">只选淡化</button>
+                </div>
+                <div id="galleryTransitionEffects" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px;max-height:120px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px">
+                  <!-- 转场效果选项将由JavaScript生成 -->
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;padding-top:20px">
+                <label style="margin:0">
+                  <input id="galleryIncludeOriginal" type="checkbox" style="width:auto;margin-right:6px" /> 
+                  在视频中包含原图
+                </label>
               </div>
             </div>
           </div>
@@ -654,6 +796,7 @@
   let imageOnlyTaskId = null;  // 仅生成图片任务ID
   let imageOnlyUploadedImageId = null;  // 仅生成图片模式下的原图 ID
   let composeAudioId = null;  // 合成视频时的音频ID
+  let currentGalleryGroup = null;  // 当前选中的图库分组
 
   // 初始化
   init();
@@ -663,6 +806,7 @@
     initTransitionEffects();
     initHistoryTransitionEffects();
     initComposeTransitionEffects();
+    initGalleryTransitionEffects();
     updateButtonText();
     await checkConnection();
   }
@@ -751,6 +895,34 @@
     });
   }
 
+  function initGalleryTransitionEffects() {
+    // 初始化图库模式下的转场效果选择器
+    const galleryTransitionEffectsContainer = el('galleryTransitionEffects');
+    galleryTransitionEffectsContainer.innerHTML = '';
+    
+    // 默认选中的转场效果
+    const defaultSelected = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    
+    availableTransitions.forEach(transition => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'transition-checkbox';
+      
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = `gallery_transition_${transition.value}`;
+      checkbox.value = transition.value;
+      checkbox.checked = defaultSelected.includes(transition.value);
+      
+      const label = document.createElement('label');
+      label.htmlFor = checkbox.id;
+      label.textContent = transition.label;
+      
+      wrapper.appendChild(checkbox);
+      wrapper.appendChild(label);
+      galleryTransitionEffectsContainer.appendChild(wrapper);
+    });
+  }
+
   function switchMode(mode) {
     currentMode = mode;
     
@@ -758,11 +930,13 @@
     newTaskMode.style.display = 'none';
     imageOnlyMode.style.display = 'none';
     historyTaskMode.style.display = 'none';
+    el('galleryMode').style.display = 'none';
     
     // 移除所有按钮的活跃状态
     el('newTaskBtn').classList.remove('active');
     el('imageOnlyBtn').classList.remove('active');
     el('historyTaskBtn').classList.remove('active');
+    el('galleryBtn').classList.remove('active');
     
     if (mode === 'new') {
       newTaskMode.style.display = 'block';
@@ -790,6 +964,15 @@
       videoSection.style.display = 'none';
       statsSection.style.display = 'none';
       loadHistoryTasks();
+    } else if (mode === 'gallery') {
+      el('galleryMode').style.display = 'block';
+      el('galleryBtn').classList.add('active');
+      startBtn.textContent = '从图库生成视频';
+      // 清空图片显示，等待用户选择图库分组
+      gallery.innerHTML = '';
+      videoSection.style.display = 'none';
+      statsSection.style.display = 'none';
+      loadGalleryGroups();
     }
     
     updateButtonText();
@@ -988,6 +1171,13 @@
     inputImage.onchange = handleImageUpload;
     bgmFile.onchange = handleAudioUpload;
     historyBgmFile.onchange = handleHistoryAudioUpload;
+    
+    // 图库文件上传
+    el('galleryImageUpload').onchange = handleGalleryImageUpload;
+    
+    // 仅生成图片模式的文件上传
+    imageInputImage.onchange = handleImageOnlyImageUpload;
+    composeBgmFile.onchange = handleComposeAudioUpload;
     
     // 仅生成图片模式的文件上传
     imageInputImage.onchange = handleImageOnlyImageUpload;
@@ -1268,6 +1458,26 @@
     };
   }
 
+  function getGalleryConfig() {
+    // 获取图库模式下的配置
+    const selectedTransitions = [];
+    const checkboxes = el('galleryTransitionEffects').querySelectorAll('input[type="checkbox"]:checked');
+    checkboxes.forEach(checkbox => {
+      selectedTransitions.push(checkbox.value);
+    });
+    
+    return {
+      fps: parseInt(el('galleryVideoFps').value) || 30,
+      per_slide_seconds: parseFloat(el('galleryPerSlideSeconds').value) || 3.0,
+      transition_seconds: parseFloat(el('galleryTransitionSeconds').value) || 0.6,
+      transition_effects: selectedTransitions,
+      width: parseInt(el('galleryVideoWidth').value) || 720,
+      height: parseInt(el('galleryVideoHeight').value) || 1280,
+      image_multiplier: parseInt(el('galleryImageMultiplier').value) || 1,
+      include_original: el('galleryIncludeOriginal').checked
+    };
+  }
+
   function getHistoryConfig() {
     // 获取历史任务模式下的配置
     const selectedTransitions = [];
@@ -1327,6 +1537,29 @@
         }
       } else {
         startBtn.textContent = '从历史任务重新生成视频';
+      }
+    } else if (currentMode === 'gallery') {
+      if (currentGalleryGroup) {
+        // 获取选中的图片数量
+        const selectedCheckboxes = el('galleryImagesGrid').querySelectorAll('.gallery-item-checkbox:checked');
+        const selectedCount = selectedCheckboxes.length;
+        
+        if (selectedCount > 0) {
+          const config = getGalleryConfig();
+          const totalImages = selectedCount * config.image_multiplier;
+          const totalSeconds = totalImages * config.per_slide_seconds;
+          const resolution = `${config.width}x${config.height}`;
+          
+          if (config.image_multiplier > 1) {
+            startBtn.textContent = `从图库生成视频（${selectedCount}张×${config.image_multiplier}倍=${totalImages}张）${totalSeconds.toFixed(1)}秒 (${resolution})`;
+          } else {
+            startBtn.textContent = `从图库生成视频（${selectedCount}张）${totalSeconds.toFixed(1)}秒 (${resolution})`;
+          }
+        } else {
+          startBtn.textContent = '从图库生成视频（请先选择图片）';
+        }
+      } else {
+        startBtn.textContent = '从图库生成视频（请先选择分组）';
       }
     }
   }
@@ -1962,6 +2195,192 @@
   window.selectSlideComposeTransitions = selectSlideComposeTransitions;
   window.selectFadeComposeTransitions = selectFadeComposeTransitions;
 
+
+
+  // 显示自定义确认对话框（返回Promise）
+  function showCustomConfirm(title, message, confirmText = '确认', cancelText = '取消') {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('customModal');
+      const titleEl = modal.querySelector('.modal-title');
+      const messageEl = modal.querySelector('.modal-message');
+      const confirmBtn = modal.querySelector('.modal-btn-confirm');
+      const cancelBtn = modal.querySelector('.modal-btn-cancel');
+      
+      // 设置内容
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      confirmBtn.textContent = confirmText;
+      cancelBtn.textContent = cancelText;
+      
+      // 重置点击事件（避免之前的事件干扰）
+      confirmBtn.onclick = () => {
+        hideCustomModal();
+        resolve(true);
+      };
+      
+      cancelBtn.onclick = () => {
+        hideCustomModal();
+        resolve(false);
+      };
+      
+      // 显示模态框
+      modal.classList.add('show');
+      
+      // ESC键支持
+      const handleEscape = (event) => {
+        if (event.key === 'Escape') {
+          document.removeEventListener('keydown', handleEscape);
+          hideCustomModal();
+          resolve(false);
+        }
+      };
+      
+      document.addEventListener('keydown', handleEscape);
+      
+      // 点击外部区域关闭
+      const handleOutsideClick = (event) => {
+        if (event.target === modal) {
+          document.removeEventListener('click', handleOutsideClick);
+          hideCustomModal();
+          resolve(false);
+        }
+      };
+      
+      setTimeout(() => {
+        document.addEventListener('click', handleOutsideClick);
+      }, 100); // 延迟添加，避免立即触发
+    });
+  }
+
+  // 显示自定义模态对话框
+  function showCustomModal(message, callback) {
+    const modal = document.getElementById('customModal');
+    const messageEl = modal.querySelector('.modal-message');
+    
+    messageEl.textContent = message;
+    modalCallback = callback;
+    
+    modal.classList.add('show');
+    
+    // 监听 ESC 键关闭对话框
+    document.addEventListener('keydown', handleModalEscape);
+  }
+
+  // 隐藏自定义模态对话框
+  function hideCustomModal(confirmed) {
+    const modal = document.getElementById('customModal');
+    modal.classList.remove('show');
+    
+    // 移除 ESC 键监听
+    document.removeEventListener('keydown', handleModalEscape);
+    
+    // 执行回调
+    if (modalCallback) {
+      modalCallback(confirmed);
+      modalCallback = null;
+    }
+  }
+
+  // 处理 ESC 键按下
+  function handleModalEscape(event) {
+    if (event.key === 'Escape') {
+      hideCustomModal(false);
+    }
+  }
+
+  // 显示带输入框的自定义模态对话框
+  function showCustomModalWithInput(title, message, defaultValue, callback) {
+    // 创建模态对话框元素
+    const modal = document.createElement('div');
+    modal.className = 'custom-modal';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <div class="modal-icon">📁</div>
+        <div class="modal-title">${title}</div>
+        <div class="modal-message">${message}</div>
+        <input type="text" id="customModalInput" class="modal-input" value="${defaultValue}" />
+        <div class="modal-buttons">
+          <button class="modal-btn modal-btn-cancel" id="modalCancelBtn">取消</button>
+          <button class="modal-btn modal-btn-confirm" id="modalConfirmBtn">确认</button>
+        </div>
+      </div>
+    `;
+    
+    // 添加到页面
+    document.body.appendChild(modal);
+    
+    // 获取元素
+    const input = modal.querySelector('#customModalInput');
+    const cancelBtn = modal.querySelector('#modalCancelBtn');
+    const confirmBtn = modal.querySelector('#modalConfirmBtn');
+    
+    // 显示模态框
+    modal.classList.add('show');
+    
+    // 聚焦到输入框
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 100);
+    
+    // 确认按钮事件
+    confirmBtn.onclick = () => {
+      const value = input.value.trim();
+      hideCustomModalWithInput(modal);
+      if (callback) callback(value);
+    };
+    
+    // 取消按钮事件
+    cancelBtn.onclick = () => {
+      hideCustomModalWithInput(modal);
+    };
+    
+    // 回车键确认
+    input.onkeypress = (e) => {
+      if (e.key === 'Enter') {
+        confirmBtn.click();
+      }
+    };
+    
+    // ESC键关闭
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        document.removeEventListener('keydown', handleEscape);
+        hideCustomModalWithInput(modal);
+      }
+    };
+    
+    document.addEventListener('keydown', handleEscape);
+    
+    // 点击外部区域关闭
+    const handleOutsideClick = (event) => {
+      if (event.target === modal) {
+        document.removeEventListener('click', handleOutsideClick);
+        hideCustomModalWithInput(modal);
+      }
+    };
+    
+    setTimeout(() => {
+      document.addEventListener('click', handleOutsideClick);
+    }, 100);
+  }
+
+  // 隐藏带输入框的自定义模态对话框
+  function hideCustomModalWithInput(modal) {
+    modal.classList.remove('show');
+    setTimeout(() => {
+      if (modal.parentNode) {
+        modal.parentNode.removeChild(modal);
+      }
+    }, 300);
+  }
+
+  // 将函数添加到全局作用域
+  window.showCustomModal = showCustomModal;
+  window.showCustomConfirm = showCustomConfirm;
+  window.hideCustomModal = hideCustomModal;
+  window.showCustomModalWithInput = showCustomModalWithInput;
+
   // 历史任务转场效果选择函数
   function selectAllHistoryTransitions() {
     const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
@@ -1993,10 +2412,533 @@
     });
   }
 
+  // ==================== 图库功能函数 ====================
+
+  // 创建新图库分组
+  async function createNewGalleryGroup() {
+    // 使用自定义模态对话框替代prompt
+    showCustomModalWithInput('创建新分组', '请输入新分组的名称:', '', (groupName) => {
+      if (!groupName) {
+        toast('❌ 分组名称不能为空', 'err');
+        return;
+      }
+      
+      if (groupName.length > 50) {
+        toast('❌ 分组名称不能超过50个字符', 'err');
+        return;
+      }
+      
+      createGalleryGroup(groupName);
+    });
+  }
+
+  // 创建图库分组的实际函数
+  async function createGalleryGroup(groupName) {
+    try {
+      const response = await fetch(`${API_BASE}/gallery/groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: groupName })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast('✅ 分组创建成功', 'ok');
+        // 重新加载分组列表
+        await loadGalleryGroups();
+      } else {
+        throw new Error(result.error || '创建失败');
+      }
+    } catch (error) {
+      toast(`❌ 创建分组失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 重命名图库分组
+  async function renameGalleryGroup() {
+    if (!currentGalleryGroup) {
+      toast('请先选择一个分组', 'warn');
+      return;
+    }
+    
+    // 使用自定义模态对话框替代prompt
+    showCustomModalWithInput('重命名分组', '请输入新的分组名称:', currentGalleryGroup.name, (newName) => {
+      if (!newName) {
+        toast('❌ 分组名称不能为空', 'err');
+        return;
+      }
+      
+      if (newName === currentGalleryGroup.name) {
+        toast('❌ 新名称不能与原名称相同', 'warn');
+        return;
+      }
+      
+      if (newName.length > 50) {
+        toast('❌ 分组名称不能超过50个字符', 'err');
+        return;
+      }
+      
+      renameGalleryGroupWithName(newName);
+    });
+  }
+
+  // 重命名图库分组的实际函数
+  async function renameGalleryGroupWithName(newName) {
+    try {
+      const response = await fetch(`${API_BASE}/gallery/groups/${currentGalleryGroup.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast('✅ 分组重命名成功', 'ok');
+        currentGalleryGroup.name = newName;
+        // 重新加载分组列表
+        await loadGalleryGroups();
+        // 重新选择当前分组
+        el('galleryGroupSelect').value = currentGalleryGroup.id;
+        // 重新加载当前分组的图片
+        await selectGalleryGroup();
+      } else {
+        throw new Error(result.error || '重命名失败');
+      }
+    } catch (error) {
+      toast(`❌ 重命名分组失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 加载图库分组
+  async function loadGalleryGroups() {
+    try {
+      const response = await fetch(`${API_BASE}/gallery/groups`);
+      const data = await response.json();
+      
+      const groupSelect = el('galleryGroupSelect');
+      groupSelect.innerHTML = '<option value="">选择或创建分组...</option>';
+      
+      data.groups.forEach(group => {
+        const option = document.createElement('option');
+        option.value = group.id;
+        option.textContent = `${group.name} (${group.image_count}张图片)`;
+        groupSelect.appendChild(option);
+      });
+      
+      // 如果之前有选中的分组，重新选中它
+      if (currentGalleryGroup) {
+        groupSelect.value = currentGalleryGroup.id;
+      }
+    } catch (error) {
+      toast(`加载图库分组失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 选择图库分组
+  async function selectGalleryGroup() {
+    const groupId = el('galleryGroupSelect').value;
+    
+    if (!groupId) {
+      // 隐藏相关区域
+      el('galleryUploadArea').style.display = 'none';
+      el('galleryImagesArea').style.display = 'none';
+      el('galleryVideoConfig').style.display = 'none';
+      el('galleryGroupActions').style.display = 'none';
+      return;
+    }
+    
+    try {
+      // 获取分组信息
+      const response = await fetch(`${API_BASE}/gallery/groups/${groupId}`);
+      const data = await response.json();
+      
+      currentGalleryGroup = data.group;
+      
+
+    
+    document.addEventListener('keydown', handleEscape);
+    
+    // 点击外部区域关闭
+    const handleOutsideClick = (event) => {
+      if (event.target === modal) {
+        document.removeEventListener('click', handleOutsideClick);
+        hideCustomModalWithInput(modal);
+      }
+    };
+    
+    setTimeout(() => {
+      document.addEventListener('click', handleOutsideClick);
+    }, 100);
+  
+  
+
+  // 隐藏带输入框的自定义模态对话框
+  function hideCustomModalWithInput(modal) {
+    modal.classList.remove('show');
+    setTimeout(() => {
+      if (modal.parentNode) {
+        modal.parentNode.removeChild(modal);
+      }
+    }, 300);
+  }
+
+  // 将函数添加到全局作用域
+  window.showCustomModal = showCustomModal;
+  window.showCustomConfirm = showCustomConfirm;
+  window.hideCustomModal = hideCustomModal;
+  window.showCustomModalWithInput = showCustomModalWithInput;
+
+  // 历史任务转场效果选择函数
+  function selectAllHistoryTransitions() {
+    const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = true;
+    });
+  }
+
+  function selectNoneHistoryTransitions() {
+    const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+    });
+  }
+
+  function selectSlideHistoryTransitions() {
+    const checkboxes = historyTransitionEffectsContainer.querySelectorAll('input[type="checkbox"]');
+    const slideEffects = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = slideEffects.includes(checkbox.value);
+    });
+  }
+      el('galleryUploadArea').style.display = 'block';
+      el('galleryImagesArea').style.display = 'block';
+      el('galleryVideoConfig').style.display = 'block';
+      el('galleryGroupActions').style.display = 'flex';
+      
+      // 更新分组标题
+      el('galleryGroupTitle').textContent = `分组: ${currentGalleryGroup.name}`;
+      
+      // 加载分组中的图片
+      await loadGalleryImages(groupId);
+      
+    } catch (error) {
+      toast(`加载图库分组失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 加载图库图片
+  async function loadGalleryImages(groupId) {
+    try {
+      const response = await fetch(`${API_BASE}/gallery/groups/${groupId}/images`);
+      const data = await response.json();
+      
+      const imagesGrid = el('galleryImagesGrid');
+      imagesGrid.innerHTML = '';
+      
+      if (data.images.length === 0) {
+        imagesGrid.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;grid-column:1/-1">该分组暂无图片</div>';
+        return;
+      }
+      
+      // 为每张图片创建网格项
+      data.images.forEach(image => {
+        const imageItem = document.createElement('div');
+        imageItem.className = 'gallery-item';
+        imageItem.dataset.imageId = image.id;
+        
+        imageItem.innerHTML = `
+          <input type="checkbox" class="gallery-item-checkbox" onchange="onGalleryImageSelect(this)">
+          <button class="gallery-item-delete" onclick="deleteGalleryImage('${image.id}', event)" title="删除图片">×</button>
+          <img src="${API_BASE}/files/${image.id}" alt="${image.name}" loading="lazy">
+        `;
+        
+        imagesGrid.appendChild(imageItem);
+      });
+      
+    } catch (error) {
+      toast(`加载图库图片失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 图库图片选择事件
+  function onGalleryImageSelect(checkbox) {
+    const imageItem = checkbox.closest('.gallery-item');
+    if (checkbox.checked) {
+      imageItem.classList.add('selected');
+    } else {
+      imageItem.classList.remove('selected');
+    }
+  }
+
+  // 全选图库图片
+  function selectAllGalleryImages() {
+    const checkboxes = el('galleryImagesGrid').querySelectorAll('.gallery-item-checkbox');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = true;
+      onGalleryImageSelect(checkbox);
+    });
+  }
+
+  // 全不选图库图片
+  function selectNoneGalleryImages() {
+    const checkboxes = el('galleryImagesGrid').querySelectorAll('.gallery-item-checkbox');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+      onGalleryImageSelect(checkbox);
+    });
+  }
+
+  // 删除选中的图库图片
+  async function deleteSelectedGalleryImages() {
+    const selectedCheckboxes = el('galleryImagesGrid').querySelectorAll('.gallery-item-checkbox:checked');
+    
+    if (selectedCheckboxes.length === 0) {
+      toast('请先选择要删除的图片', 'warn');
+      return;
+    }
+    
+    const confirmed = await showCustomConfirm(
+      '确认删除',
+      `确定要删除选中的 ${selectedCheckboxes.length} 张图片吗？删除后将无法恢复。`,
+      '删除',
+      '取消'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      const imageIds = Array.from(selectedCheckboxes).map(cb => cb.closest('.gallery-item').dataset.imageId);
+      
+      const response = await fetch(`${API_BASE}/gallery/images/batch-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_ids: imageIds })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast(`✅ 成功删除 ${result.deleted_count} 张图片`, 'ok');
+        // 重新加载当前分组
+        await selectGalleryGroup();
+      } else {
+        throw new Error(result.error || '删除失败');
+      }
+    } catch (error) {
+      toast(`❌ 删除图片失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 删除单张图库图片
+  async function deleteGalleryImage(imageId, event) {
+    event.stopPropagation();
+    
+    const confirmed = await showCustomConfirm(
+      '确认删除',
+      '确定要删除这张图片吗？删除后将无法恢复。',
+      '删除',
+      '取消'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      const response = await fetch(`${API_BASE}/gallery/images/${imageId}`, {
+        method: 'DELETE'
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast('✅ 图片删除成功', 'ok');
+        // 重新加载当前分组
+        await selectGalleryGroup();
+      } else {
+        throw new Error(result.error || '删除失败');
+      }
+    } catch (error) {
+      toast(`❌ 删除图片失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 删除图库分组
+  async function deleteGalleryGroup() {
+    if (!currentGalleryGroup) {
+      toast('请先选择一个分组', 'warn');
+      return;
+    }
+    
+    const confirmed = await showCustomConfirm(
+      '确认删除',
+      `确定要删除分组 "${currentGalleryGroup.name}" 吗？该分组中的所有图片都将被删除且无法恢复。`,
+      '删除',
+      '取消'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      const response = await fetch(`${API_BASE}/gallery/groups/${currentGalleryGroup.id}`, {
+        method: 'DELETE'
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast('✅ 分组删除成功', 'ok');
+        currentGalleryGroup = null;
+        // 重新加载分组列表
+        await loadGalleryGroups();
+        // 重置界面
+        el('galleryGroupSelect').value = '';
+        selectGalleryGroup();
+      } else {
+        throw new Error(result.error || '删除失败');
+      }
+    } catch (error) {
+      toast(`❌ 删除分组失败: ${error.message}`, 'err');
+    }
+  }
+
+  // 图库图片上传处理
+  async function handleGalleryImageUpload() {
+    const fileInput = el('galleryImageUpload');
+    const files = fileInput.files;
+    
+    if (!files || files.length === 0) return;
+    
+    if (!currentGalleryGroup) {
+      toast('请先选择一个分组', 'warn');
+      return;
+    }
+    
+    try {
+      toast(`📤 正在上传 ${files.length} 张图片...`, 'info');
+      
+      // 逐个上传文件
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // 检查文件类型
+        if (!file.type.startsWith('image/')) {
+          toast(`⚠️ 跳过非图片文件: ${file.name}`, 'warn');
+          continue;
+        }
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('type', 'image');
+        formData.append('group_id', currentGalleryGroup.id);
+        
+        const response = await fetch(`${API_BASE}/gallery/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+          toast(`❌ 上传失败 ${file.name}: ${result.error || '未知错误'}`, 'err');
+        }
+      }
+      
+      toast('✅ 图片上传完成', 'ok');
+      
+      // 清空文件输入框
+      fileInput.value = '';
+      
+      // 重新加载当前分组
+      await selectGalleryGroup();
+      
+    } catch (error) {
+      toast(`❌ 图片上传失败: ${error.message}`, 'err');
+      console.error('Upload error:', error);
+    }
+  }
+
+  // 转场效果选择相关函数
+  function selectAllGalleryTransitions() {
+    const checkboxes = el('galleryTransitionEffects').querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = true;
+    });
+  }
+
+  function selectNoneGalleryTransitions() {
+    const checkboxes = el('galleryTransitionEffects').querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+    });
+  }
+
+  function selectSlideGalleryTransitions() {
+    const checkboxes = el('galleryTransitionEffects').querySelectorAll('input[type="checkbox"]');
+    const slideEffects = ['slideleft', 'slideright', 'slideup', 'slidedown'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = slideEffects.includes(checkbox.value);
+    });
+  }
+
+  function selectFadeGalleryTransitions() {
+    const checkboxes = el('galleryTransitionEffects').querySelectorAll('input[type="checkbox"]');
+    const fadeEffects = ['fadeblack', 'fadewhite', 'dissolve', 'fadefast', 'fadeslow', 'fadegrays'];
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = fadeEffects.includes(checkbox.value);
+    });
+  }
+
+  // 修复重复暴露的问题，确保每个函数只暴露一次
+  // 转场效果选择相关函数
+  window.selectAllTransitions = selectAllTransitions;
+  window.selectNoneTransitions = selectNoneTransitions;
+  window.selectSlideTransitions = selectSlideTransitions;
+  window.selectFadeTransitions = selectFadeTransitions;
+  
   window.selectAllHistoryTransitions = selectAllHistoryTransitions;
   window.selectNoneHistoryTransitions = selectNoneHistoryTransitions;
   window.selectSlideHistoryTransitions = selectSlideHistoryTransitions;
   window.selectFadeHistoryTransitions = selectFadeHistoryTransitions;
+
+  // 仅生成图片模式的相关函数
+  window.selectAllImages = selectAllImages;
+  window.selectNoneImages = selectNoneImages;
+  window.deleteSelectedImage = deleteSelectedImage;
+  window.deleteGalleryImage = deleteGalleryImage;
+  window.selectAllComposeTransitions = selectAllComposeTransitions;
+  window.selectNoneComposeTransitions = selectNoneComposeTransitions;
+  window.selectSlideComposeTransitions = selectSlideComposeTransitions;
+  window.selectFadeComposeTransitions = selectFadeComposeTransitions;
+
+  // 历史任务相关函数
+  window.loadHistoryTasks = loadHistoryTasks;
+  window.deleteHistoryTask = deleteHistoryTask;
+
+  // 图库相关函数
+  window.createNewGalleryGroup = createNewGalleryGroup;
+  window.loadGalleryGroups = loadGalleryGroups;
+  window.selectGalleryGroup = selectGalleryGroup;
+  window.renameGalleryGroup = renameGalleryGroup;
+  window.deleteGalleryGroup = deleteGalleryGroup;
+  window.selectAllGalleryImages = selectAllGalleryImages;
+  window.selectNoneGalleryImages = selectNoneGalleryImages;
+  window.deleteSelectedGalleryImages = deleteSelectedGalleryImages;
+  window.selectAllGalleryTransitions = selectAllGalleryTransitions;
+  window.selectNoneGalleryTransitions = selectNoneGalleryTransitions;
+  window.selectSlideGalleryTransitions = selectSlideGalleryTransitions;
+  window.selectFadeGalleryTransitions = selectFadeGalleryTransitions;
+  
+  // 模式切换函数
+  window.switchMode = switchMode;
+  
+  // 其他需要全局访问的函数
+  window.showCustomModal = showCustomModal;
+  window.showCustomConfirm = showCustomConfirm;
+  window.hideCustomModal = hideCustomModal;
+  window.showCustomModalWithInput = showCustomModalWithInput;
+  window.handleGenerateImagesOnly = handleGenerateImagesOnly;
+  window.handleComposeVideo = handleComposeVideo;
 })();
 </script>
 </body>
