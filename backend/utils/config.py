@@ -13,7 +13,7 @@ class Config:
     def __init__(self):
         # 基础配置
         self.DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
-        self.HOST = os.getenv('HOST', '127.0.0.1')
+        self.HOST = os.getenv('HOST', '0.0.0.0')
         self.PORT = int(os.getenv('PORT', 5000))
         
         # 存储配置

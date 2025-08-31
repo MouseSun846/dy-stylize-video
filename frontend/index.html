@@ -1759,8 +1759,12 @@
         
         const info = document.createElement('div');
         info.className = 'info';
+        // 确定要显示的文本：如果有style就显示style，如果没有就显示filename
+        const displayText = img.style ? img.style : (img.filename || '无风格');
+        // 如果文本过长，添加title属性以便悬停时显示完整文本
+        const titleAttr = displayText.length > 20 ? ` title="${displayText}"` : '';
         info.innerHTML = `
-          <div>${img.style}</div>
+          <div${titleAttr} style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${displayText}</div>
           <a href="${API_BASE}/files/${img.file_id}" download="style_${img.index}.png" style="color:var(--accent)">下载</a>
         `;
         
@@ -1830,8 +1834,12 @@
         
         const info = document.createElement('div');
         info.className = 'info';
+        // 确定要显示的文本：如果有style就显示style，如果没有就显示filename
+        const displayText = img.style ? img.style : (img.filename || '无风格');
+        // 如果文本过长，添加title属性以便悬停时显示完整文本
+        const titleAttr = displayText.length > 20 ? ` title="${displayText}"` : '';
         info.innerHTML = `
-          <div>${img.style}</div>
+          <div${titleAttr} style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${displayText}</div>
           <a href="${API_BASE}/files/${img.file_id}" download="style_${img.index}.png" style="color:var(--accent)">下载</a>
         `;
         

@@ -12,15 +12,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM 检查FFmpeg
-ffmpeg -version >nul 2>&1
-if errorlevel 1 (
-    echo ❌ FFmpeg 未安装，请先安装FFmpeg
-    echo    下载地址: https://ffmpeg.org/download.html
-    echo    或使用 winget install FFmpeg
-    pause
-    exit /b 1
-)
+
 
 REM 进入后端目录
 cd backend

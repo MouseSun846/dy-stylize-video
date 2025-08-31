@@ -219,10 +219,15 @@ async def get_history_tasks(limit: int = 50, skip: int = 0):
         # 获取历史任务列表
         tasks = await db_service.get_history_tasks(limit, skip)
         
-        # 为每个任务添加图片计数
+        # 为每个任务添加图片计数和确保images中的元素包含filename属性
         for task in tasks:
             if 'images' in task:
                 task['image_count'] = len(task['images'])
+                # 为每个image添加filename属性
+                for img in task['images']:
+                    if 'file_id' in img and 'filename' not in img:
+                        # 如果没有filename，使用file_id作为默认文件名
+                        img['filename'] = f"image_{img['file_id'][:8]}.jpg"
             else:
                 task['image_count'] = 0
         
